@@ -174,12 +174,12 @@ thread_create (const char *name, int priority,
 
   ASSERT (function != NULL);
 
-  /* Allocate thread. */
+  /* Memory에 Thread의 공간을 할당한다.*/
   t = palloc_get_page (PAL_ZERO);
   if (t == NULL)
     return TID_ERROR;
 
-  /* Initialize thread. */
+  /* Thread의 초기 값을 설정한다. Thread의 이름과 우선순위가 해당된다. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
@@ -198,7 +198,7 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
-  /* Add to run queue. */
+  /* Thread가 생성완료 되기 전, Unblocked처리를 해주어 Ready Queue에 넣는다. */
   thread_unblock (t);
 
   return tid;
@@ -280,7 +280,7 @@ thread_tid (void)
 void
 thread_exit (void) 
 {
-  ASSERT (!intr_context ());
+  ASSERT (!intr_context ()); // 인터럽트가 발생하면 Panic 발생.
 
 #ifdef USERPROG
   process_exit ();
@@ -289,10 +289,10 @@ thread_exit (void)
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
-  intr_disable ();
+  intr_disable (); // 도중에 인터럽트가 발생하는 것을 방지하기 위해 인터럽트 Disabled.
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
-  schedule ();
+  schedule (); // thread_schedule_tail()에서 THREAD_DYING Status이면 Deallocate 실행.
   NOT_REACHED ();
 }
 
@@ -557,10 +557,10 @@ schedule (void)
   struct thread *prev = NULL;
 
   ASSERT (intr_get_level () == INTR_OFF);
-  ASSERT (cur->status != THREAD_RUNNING);
+  ASSERT (cur->status != THREAD_RUNNING);//Current_Thread의 Status는 Running일 수 없다.
   ASSERT (is_thread (next));
 
-  if (cur != next)
+  if (cur != next) // Ready List에 thread가 1개가 아니면.
     prev = switch_threads (cur, next);
   thread_schedule_tail (prev);
 }

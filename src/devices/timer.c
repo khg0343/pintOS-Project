@@ -170,7 +170,7 @@ timer_print_stats (void)
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
-  ticks++;
+  ticks++; //Since OS booting.
   thread_tick ();
 }
 
