@@ -27,6 +27,8 @@ static struct list ready_list;
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
+/* For Alarm Clock -> Sleeping thread 넣어주는 list 추가*/
+static struct list sleep_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -582,3 +584,32 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_elem, void *aux)//sleep_elem:잘 Thread, slept_elem:자고있는 이미 list 안에 있는
+{
+  return list_entry(sleep_elem,struct thread, elem) ->WakeUpTicks < list_entry(slept_elem,struct thread,elem)->WakeUpTicks;
+}
+
+void thread_sleep(int64_t ticks) // 여기서 ticks argument는 thread가 일어날 시간이다.
+{
+  struct thread *cur = thread_current();
+  ASSERT(cur!=idle_thread);
+  /*Sleep 처리 되는 Thread는 Block될 Thread인데, Block을 call 하기 위해서는 인터럽트를 disable 해야한다.*/
+  enum intr_level old_level;
+  old_level = intr_disable();
+  cur->WakeUpTicks = ticks;
+  list_insert_ordered(&sleep_list,&cur->elem,CompareWakeUpTick,NULL);
+  thread_block();
+  intr_set_level(old_level);
+}
+
+void thread_WakeUp(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시간을 의미함
+{
+  struct list_elem *it = list_begin(&sleep_list);
+  while(it!= list_end(&sleep_list))
+  {
+    struct thread *cur = list_entry(it,struct thread, elem);
+    if(cur->WakeUpTicks > ticks) break; // 아직 일어날 시간이 아니기 때문에 break하고 함수 out.
+    it= list_remove(it);
+    thread_unblock(cur);
+  }
+}

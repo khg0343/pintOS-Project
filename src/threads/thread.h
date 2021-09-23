@@ -103,6 +103,8 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     
     /* Thread의 Stack Overflow를 확인하는 값이다. Stack Pointer가 이 값을 가리키면 Overflow이다. */ 
+    int64_t WakeUpTicks;
+    /*Thread가 일어날 시간을 담는 Variable이다.*/
   };
 
 /* If false (default), use round-robin scheduler.
@@ -140,5 +142,7 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-
+bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_elem, void *aux);
+void thread_sleep(int64_t ticks);
+void thread_WakeUp(int64_t ticks);
 #endif /* threads/thread.h */
