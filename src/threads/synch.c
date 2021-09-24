@@ -199,7 +199,7 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  priority_donation(&lock);
+  priority_donation(lock);
 
   sema_down (&lock->semaphore);
   lock->holder = thread_current();
@@ -220,7 +220,7 @@ bool lock_try_acquire (struct lock *lock)
 
   success = sema_try_down (&lock->semaphore);
   if (success)
-    lock->holder = thread_current ();
+    lock->holder = thread_current();
   return success;
 }
 
@@ -233,9 +233,9 @@ void
 lock_release (struct lock *lock) 
 {
   ASSERT (lock != NULL);
-  ASSERT (lock_held_by_current_thread (lock));
+  ASSERT (lock_held_by_current_thread(lock));
 
-  reset_donation(&lock);
+  reset_donation(lock);
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
@@ -251,6 +251,21 @@ bool lock_held_by_current_thread (const struct lock *lock)
   return lock->holder == thread_current ();
 }
 
+void lock_remove(struct lock* lock)
+{
+    ASSERT(!thread_mlfqs);
+    struct thread *thrd_cur = thread_current();
+    struct list_elem *elem;
+    struct list *list = &thrd_cur->donation_list;
+
+    for (elem = list_begin(list); elem != list_end(list); )
+    {
+        struct thread *thrd = list_entry(elem, struct thread, donation_elem);
+        if (lock == thrd->wait_lock) elem = list_remove(elem);
+        else                         elem = list_next(elem);
+    }
+}
+
 
 void priority_donation(struct lock* lock) {
   struct thread *thrd_cur = thread_current();
@@ -258,7 +273,7 @@ void priority_donation(struct lock* lock) {
   {
       thrd_cur->wait_lock = lock;
       if(!thread_mlfqs){
-          list_insert_ordered(&lock->holder->donation_list, &thrd_cur->donation_elem, ComparePriority, 0);
+          list_insert_ordered(&lock->holder->donation_list, &thrd_cur->donation_elem, ComparePriority, NULL);
           donate_priority();
       }
   };
@@ -282,7 +297,7 @@ void donate_priority()
 void reset_donation(struct lock* lock){
 
   if(!thread_mlfqs){
-    remove_lock(lock);
+    lock_remove(lock);
     lock->holder->priority = lock->holder->origin_priority;
     reset_priority(lock->holder, &(lock->holder->priority));
   }
@@ -299,7 +314,7 @@ void reset_priority(struct thread *thrd, int *priority)
 
     while(!list_empty(&thrd_donator->donation_list)){
         list_sort(&thrd_donator->donation_list, ComparePriority, 0);
-        thrd_donator = list_entry(list_front(&thrd_donator->donation_list), struct thread, donation);
+        thrd_donator = list_entry(list_front(&thrd_donator->donation_list), struct thread, donation_elem);
         
         if (*priority > thrd_donator->priority) break;
         *priority = thrd_donator->priority;
