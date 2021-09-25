@@ -241,9 +241,10 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_insert_ordered(&ready_list, &t->elem, ComparePriority, 0);
+  list_insert_ordered(&ready_list, &t->elem, thread_comparepriority, NULL);
   //list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+  
   intr_set_level (old_level);
 }
 
@@ -313,7 +314,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread)
-      list_insert_ordered(&ready_list, &cur->elem, ComparePriority, 0); // 0924
+      list_insert_ordered(&ready_list, &cur->elem, thread_comparepriority, NULL); // 0924
     //list_push_back (&ready_list, &cur->elem);
   cur->status = THREAD_READY;
   schedule ();
@@ -599,11 +600,6 @@ bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_ele
   return list_entry(sleep_elem,struct thread, elem) ->WakeUpTicks < list_entry(slept_elem,struct thread,elem)->WakeUpTicks;
 }
 
-bool ComparePriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
-{
-  return list_entry(thread_1, struct thread, elem)->priority > list_entry(thread_2, struct thread, elem) -> priority;
-}
-
 void thread_sleep(int64_t ticks) // 여기서 ticks argument는 thread가 일어날 시간이다.
 {
   struct thread *cur = thread_current();
@@ -631,10 +627,19 @@ void thread_wakeup(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시�
 
 void thread_compare()//Create 될때랑 priority 재 설정 할때.
 {
-  struct thread *cur = thread_current();
-  struct thread *top = list_entry(list_front(&ready_list), struct thread, elem);
-  if(list_empty(&ready_list))
-    return;
-  if(cur->priority < top ->priority)
-    thread_yield();
+  struct thread* cur = thread_current();
+  struct thread* top = list_entry(list_front(&ready_list), struct thread, elem);
+
+  // if(!list_empty(&ready_list)) {
+  //   if(cur->priority < top->priority) thread_yield();
+  // }
+
+  if(!list_empty(&ready_list)) {
+    if(thread_current()->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority) thread_yield();
+  }
+}
+
+bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
+{
+  return list_entry(thread_1, struct thread, elem)->priority > list_entry(thread_2, struct thread, elem) -> priority;
 }

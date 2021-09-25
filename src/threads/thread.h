@@ -148,7 +148,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_elem, void *aux);
-bool ComparePriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
+bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
 void thread_sleep(int64_t ticks);
 void thread_wakeup(int64_t ticks);
 void thread_compare(void);
