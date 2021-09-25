@@ -173,7 +173,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++; //Since OS booting.
   thread_tick ();
-  thread_WakeUp(ticks);//OS BOOT이후 TICKS와 비교
+  thread_wakeup(ticks);//OS BOOT이후 TICKS와 비교
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
