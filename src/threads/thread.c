@@ -203,7 +203,7 @@ thread_create (const char *name, int priority,
 
   /* Thread가 생성완료 되기 전, Unblocked처리를 해주어 Ready Queue에 넣는다. */
   thread_unblock (t);
-  isMaxPriority(); //Thread가 생성 후 생성된 thread와 ready에 있는 top thread를 비교하여 생성된게 더 크면 생성된 것 부터 실행.
+  thread_compare(); //Thread가 생성 후 생성된 thread와 ready에 있는 top thread를 비교하여 생성된게 더 크면 생성된 것 부터 실행.
 
   return tid;
 }
@@ -342,7 +342,7 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
-  isMaxPriority(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
+  thread_compare(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
 }
 
 /* Returns the current thread's priority. */
@@ -477,7 +477,6 @@ init_thread (struct thread *t, const char *name, int priority)
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
-
 
   intr_set_level (old_level);
 }
@@ -630,7 +629,7 @@ void thread_wakeup(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시�
   }
 }
 
-void isMaxPriority()//Create 될때랑 priority 재 설정 할때.
+void thread_compare()//Create 될때랑 priority 재 설정 할때.
 {
   struct thread *cur = thread_current();
   struct thread *top = list_entry(list_front(&ready_list), struct thread, elem);

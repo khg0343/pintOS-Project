@@ -150,6 +150,6 @@ int thread_get_load_avg (void);
 bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_elem, void *aux);
 bool ComparePriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
 void thread_sleep(int64_t ticks);
-void thread_WakeUp(int64_t ticks);
-void isMaxPriority();
+void thread_wakeup(int64_t ticks);
+void thread_compare(void);
 #endif /* threads/thread.h */

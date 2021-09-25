@@ -119,7 +119,7 @@ sema_up (struct semaphore *sema)
   }
     
   sema->value++;
-  thread_compare();
+  // thread_compare();
   intr_set_level (old_level);
 }
 
@@ -192,17 +192,12 @@ lock_init (struct lock *lock)
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
-void
-lock_acquire (struct lock *lock)
+void lock_acquire (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  // priority_donation(lock);
-
-  // sema_down (&lock->semaphore);
-  // lock->holder = thread_current();
   struct thread *thrd_cur = thread_current();
   if (lock->holder) {
     thrd_cur->wait_lock = lock;
@@ -249,13 +244,13 @@ void lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread(lock));
 
-  reset_donation(lock);
+  // reset_donation(lock);
 
-  // if(!thread_mlfqs){
+  if(!thread_mlfqs){
     lock_remove(lock);
     lock->holder->priority = lock->holder->origin_priority;
     reset_priority(lock->holder, &(lock->holder->priority));
-  // }
+  }
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
@@ -278,49 +273,16 @@ void lock_remove(struct lock* lock)
     ASSERT(!thread_mlfqs);
 
     struct thread *thrd_cur = thread_current();
+
     struct list_elem *elem;
     struct list *list = &thrd_cur->donation_list;
 
-    for (elem = list_begin(list); elem != list_end(list); )
+    for (elem = list_begin(list); elem != list_end(list); elem = list_next(elem))
     {
         struct thread *thrd = list_entry(elem, struct thread, donation_elem);
-        if (lock == thrd->wait_lock) elem = list_remove(elem);
-        else                         elem = list_next(elem);
+        if (lock == thrd->wait_lock) list_remove(elem);
     }
 }
-
-// void priority_donation(struct lock* lock) {
-//   struct thread *thrd_cur = thread_current();
-//   if (lock->holder)
-//   {
-//       thrd_cur->wait_lock = lock;
-//       if(!thread_mlfqs){
-//           list_insert_ordered(&lock->holder->donation_list, &thrd_cur->donation_elem, ComparePriority, NULL);
-//           donate_priority();
-//       }
-//   };
-
-// }
-
-// void reset_donation(struct lock* lock){
-
-//   if(!thread_mlfqs){
-//     lock_remove(lock);
-//     lock->holder->priority = lock->holder->origin_priority;
-//     reset_priority(lock->holder, &(lock->holder->priority));
-//   }
-
-//     struct thread *thrd_cur = thread_current();
-
-//     struct list_elem *elem;
-//     struct list *list = &thrd_cur->donation_list;
-
-//     for (elem = list_begin(list); elem != list_end(list); elem = list_next(elem))
-//     {
-//         struct thread *thrd = list_entry(elem, struct thread, donation_elem);
-//         if (lock == thrd->wait_lock) list_remove(elem);
-//     }
-// }
 
 void donate_priority()
 {
