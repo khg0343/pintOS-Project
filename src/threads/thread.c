@@ -469,10 +469,16 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->origin_priority = priority;
+  list_init(&t->donation_list);
+  t->wait_lock = NULL;
+
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
+
+
   intr_set_level (old_level);
 }
 
@@ -612,7 +618,7 @@ void thread_sleep(int64_t ticks) // 여기서 ticks argument는 thread가 일어
   intr_set_level(old_level);
 }
 
-void thread_WakeUp(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시간을 의미함
+void thread_wakeup(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시을 의미함
 {
   struct list_elem *it = list_begin(&sleep_list);
   while(it!= list_end(&sleep_list))

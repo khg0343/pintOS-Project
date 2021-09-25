@@ -95,7 +95,7 @@ struct thread
     /* Wait Status란 Ready와 Blocked Status를 의미한다. 이는 Dual Purpose로 사용될 수 있는데, 
        두 Status는 상호 배제적이므로 Ready만 담거나, Blocked만 담거나 할 수 있다. */
 
-   int origin_priority;
+   int origin_priority;             //donation이전의 기존 priority
    struct list donation_list;       //thread에 priority를 donate한 thread들의 리스트
    struct list_elem donation_elem;  //위 list를 관리하기 위한 element
    struct lock *wait_lock;          //이 lock이 release될 때까지 thread는 기다린다.
