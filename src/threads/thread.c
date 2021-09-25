@@ -342,7 +342,10 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *thrd_cur = thread_current();
+
+  thrd_cur->priority = new_priority;
+  reset_priority(thrd_cur, thrd_cur->priority);
   thread_compare(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
 }
 
