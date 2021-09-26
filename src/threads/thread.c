@@ -366,12 +366,13 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
   enum intr_level old_level;
   old_level = intr_disable();
+
   thread_current()->nice = nice;
   mlfqs_cal_priority(thread_current());
   thread_compare();
+  
   intr_set_level(old_level);
 }
 
@@ -379,9 +380,6 @@ thread_set_nice (int nice UNUSED)
 int
 thread_get_nice (void) 
 {
-  // /* Not yet implemented. */
-  // return 0;
-
   enum intr_level old_level;
   old_level = intr_disable();
 
@@ -672,7 +670,7 @@ bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread
   return list_entry(thread_1, struct thread, elem)->priority > list_entry(thread_2, struct thread, elem) -> priority;
 }
 
-bool CompareDonatePriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
+bool thread_comparedonatepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
 {
   return list_entry(thread_1, struct thread, donation_elem)->priority > list_entry(thread_2, struct thread, donation_elem) -> priority;
 }

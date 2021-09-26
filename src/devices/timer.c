@@ -174,18 +174,19 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++; //Since OS booting.
   thread_tick ();
 
-  if(thread_mlfqs) {
+  if(!thread_mlfqs){
+    thread_wakeup(ticks);//OS BOOT이후 TICKS와 비교
+  } else {
     mlfqs_inc_recent_cpu();
-    if(ticks % 4 == 0){
+    if(!(ticks % TIMER_SLICE)){
       mlfqs_priority();
-      if(ticks % TIMER_FREQ == 0){
+      if(!(ticks % TIMER_FREQ)){
           mlfqs_recent_cpu();
           mlfqs_load_avg();
       }
     }
+    thread_wakeup(ticks);
   }
-
-  thread_wakeup(ticks);//OS BOOT이후 TICKS와 비교
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
