@@ -289,6 +289,7 @@ void donate_priority()
 {
     enum intr_level old_level;
     old_level = intr_disable();
+    int level;
 
     struct thread *thrd_cur = thread_current();
 
@@ -296,7 +297,7 @@ void donate_priority()
         thrd_cur->wait_lock->holder->priority = thrd_cur->priority;
         thrd_cur = thrd_cur->wait_lock->holder;
     }*/
-    for(int depth = 0 ; depth<8 ; depth++)
+    for(level = 0 ; level<8 ; level++)//In Pintos Document, we can apply depth of nested priority donation, level 8)(Maximum)
     {
       if(!thrd_cur->wait_lock)
         break;
