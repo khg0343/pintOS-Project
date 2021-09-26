@@ -24,6 +24,10 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+#define NICE_DEFAULT 0
+#define RECENT_CPU_DEFAULT 0
+#define LOAD_AVG_DEFAULT 0
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -95,6 +99,15 @@ struct thread
     /* Wait Status란 Ready와 Blocked Status를 의미한다. 이는 Dual Purpose로 사용될 수 있는데, 
        두 Status는 상호 배제적이므로 Ready만 담거나, Blocked만 담거나 할 수 있다. */
 
+   int origin_priority;             //donation이전의 기존 priority
+   struct list donation_list;       //thread에 priority를 donate한 thread들의 리스트
+   struct list_elem donation_elem;  //위 list를 관리하기 위한 element
+   struct lock *wait_lock;          //이 lock이 release될 때까지 thread는 기다린다.
+
+   /*Variable for Advanced Scheduler*/
+   int nice;
+   int recent_cpu;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -103,6 +116,8 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     
     /* Thread의 Stack Overflow를 확인하는 값이다. Stack Pointer가 이 값을 가리키면 Overflow이다. */ 
+    int64_t WakeUpTicks;
+    /*Thread가 일어날 시간을 담는 Variable이다.*/
   };
 
 /* If false (default), use round-robin scheduler.
@@ -140,5 +155,19 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void thread_sleep(int64_t ticks);
+void thread_wakeup(int64_t ticks);
+void thread_compare(void);
+bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_elem, void *aux);
+bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
+bool thread_comparedonatepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
+
+void mlfqs_cal_priority(struct thread *thrd);
+void mlfqs_cal_recent_cpu(struct thread *thrd);
+void mlfqs_inc_recent_cpu();
+void mlfqs_priority();
+void mlfqs_recent_cpu();
+void mlfqs_load_avg();
 
 #endif /* threads/thread.h */

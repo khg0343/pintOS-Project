@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed-point.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -27,6 +28,8 @@ static struct list ready_list;
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
+/* For Alarm Clock -> Sleeping thread 넣어주는 list 추가*/
+static struct list sleep_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -58,6 +61,7 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+int thread_load_avg;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -92,6 +96,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -115,6 +120,9 @@ thread_start (void)
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
+
+  /* Initialize Load Avg */
+  thread_load_avg = LOAD_AVG_DEFAULT;
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -200,6 +208,7 @@ thread_create (const char *name, int priority,
 
   /* Thread가 생성완료 되기 전, Unblocked처리를 해주어 Ready Queue에 넣는다. */
   thread_unblock (t);
+  thread_compare(); //Thread가 생성 후 생성된 thread와 ready에 있는 top thread를 비교하여 생성된게 더 크면 생성된 것 부터 실행.
 
   return tid;
 }
@@ -237,8 +246,10 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered(&ready_list, &t->elem, thread_comparepriority, NULL);
+  //list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+  
   intr_set_level (old_level);
 }
 
@@ -307,8 +318,9 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread)
+      list_insert_ordered(&ready_list, &cur->elem, thread_comparepriority, NULL); // 0924
+    //list_push_back (&ready_list, &cur->elem);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -335,7 +347,12 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *thrd_cur = thread_current();
+  if(!thread_mlfqs){
+    thrd_cur->origin_priority = new_priority;
+    reset_priority(thrd_cur, thrd_cur->priority);
+    thread_compare(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
+  }
 }
 
 /* Returns the current thread's priority. */
@@ -349,31 +366,56 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  thread_current()->nice = nice;
+  mlfqs_cal_priority(thread_current());
+  thread_compare();
+  
+  intr_set_level(old_level);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  int nice = thread_current()->nice;
+
+  intr_set_level(old_level);
+
+  return nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  int load_avg = fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_load_avg, 100));
+
+  intr_set_level(old_level);
+
+  return load_avg;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  int recent_cpu = fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_current()->recent_cpu, 100));
+
+  intr_set_level(old_level);
+
+  return recent_cpu;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -462,10 +504,15 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->origin_priority = priority;
+  list_init(&t->donation_list);
+  t->wait_lock = NULL;
+
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
+
   intr_set_level (old_level);
 }
 
@@ -582,3 +629,101 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_elem, void *aux)//sleep_elem:잘 Thread, slept_elem:자고있는 이미 list 안에 있는
+{
+  return list_entry(sleep_elem,struct thread, elem) ->WakeUpTicks < list_entry(slept_elem,struct thread,elem)->WakeUpTicks;
+}
+
+void thread_sleep(int64_t ticks) // 여기서 ticks argument는 thread가 일어날 시간이다.
+{
+  struct thread *cur = thread_current();
+  ASSERT(cur!=idle_thread);
+  /*Sleep 처리 되는 Thread는 Block될 Thread인데, Block을 call 하기 위해서는 인터럽트를 disable 해야한다.*/
+  enum intr_level old_level;
+  old_level = intr_disable();
+  cur->WakeUpTicks = ticks;
+  list_insert_ordered(&sleep_list,&cur->elem,CompareWakeUpTick,NULL);
+  thread_block();
+  intr_set_level(old_level);
+}
+
+void thread_wakeup(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시을 의미함
+{
+  struct list_elem *it = list_begin(&sleep_list);
+  while(it!= list_end(&sleep_list))
+  {
+    struct thread *cur = list_entry(it,struct thread, elem);
+    if(cur->WakeUpTicks > ticks) break; // 아직 일어날 시간이 아니기 때문에 break하고 함수 out.
+    it= list_remove(it);
+    thread_unblock(cur);
+  }
+}
+
+void thread_compare()//Create 될때랑 priority 재 설정 할때.
+{
+  if(!list_empty(&ready_list)&&(thread_current()->priority < list_entry(list_front(&ready_list),struct thread, elem)->priority))
+    thread_yield();
+}
+
+bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
+{
+  return list_entry(thread_1, struct thread, elem)->priority > list_entry(thread_2, struct thread, elem) -> priority;
+}
+
+bool thread_comparedonatepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
+{
+  return list_entry(thread_1, struct thread, donation_elem)->priority > list_entry(thread_2, struct thread, donation_elem) -> priority;
+}
+
+
+void mlfqs_cal_priority(struct thread *thrd){
+  if(thrd != idle_thread) {
+    thrd->priority = PRI_MAX - fp_convert_X_to_integer_round(thrd->recent_cpu / 4) - (thrd->nice * 2);
+
+    if(thrd->priority < PRI_MIN){
+      thrd->priority = PRI_MIN;
+    } else if(thrd->priority > PRI_MAX){
+      thrd->priority = PRI_MAX;
+    }
+  }
+}
+
+void mlfqs_cal_recent_cpu(struct thread *thrd){
+  if(thrd != idle_thread) {
+    thrd->recent_cpu = fp_add_X_and_N(fp_mul_X_by_Y( fp_div_X_by_Y( fp_mul_X_by_N(thread_load_avg, 2) , fp_add_X_and_N(fp_mul_X_by_N(thread_load_avg, 2), 1)), thrd->recent_cpu) , thrd->nice);
+  }
+}
+
+void mlfqs_inc_recent_cpu(){
+  if(thread_current() != idle_thread){
+    thread_current()->recent_cpu = fp_add_X_and_N(thread_current()->recent_cpu, 1);
+  }
+}
+
+void mlfqs_priority(){
+  struct list_elem *e;
+  struct thread *thrd;
+
+  for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
+    thrd = list_entry(e, struct thread, allelem);
+    mlfqs_cal_priority(thrd);
+  }
+}
+
+void mlfqs_recent_cpu(){
+  struct list_elem *e;
+  struct thread *thrd;
+
+  for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
+    thrd = list_entry(e, struct thread, allelem);
+    mlfqs_cal_recent_cpu(thrd);
+  }
+}
+
+void mlfqs_load_avg(){
+  if(thread_current() != idle_thread) {
+    thread_load_avg = fp_add_X_and_Y(fp_mul_X_by_Y(fp_div_X_by_Y( fp_convert_N_to_fp(59), fp_convert_N_to_fp(60) ), thread_load_avg), fp_mul_X_by_N(fp_div_X_by_Y( fp_convert_N_to_fp(1), fp_convert_N_to_fp(60)), fp_add_X_and_Y(list_size(&ready_list) , 1)));
+  } else {
+    thread_load_avg = fp_add_X_and_Y(fp_mul_X_by_Y(fp_div_X_by_Y( fp_convert_N_to_fp(59), fp_convert_N_to_fp(60) ), thread_load_avg), fp_mul_X_by_N(fp_div_X_by_Y( fp_convert_N_to_fp(1), fp_convert_N_to_fp(60)), list_size(&ready_list)));
+  }
+}
