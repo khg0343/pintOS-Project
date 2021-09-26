@@ -173,6 +173,18 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++; //Since OS booting.
   thread_tick ();
+
+  if(thread_mlfqs) {
+    mlfqs_inc_recent_cpu();
+    if(ticks % 4 == 0){
+      mlfqs_priority();
+      if(ticks % TIMER_FREQ == 0){
+          mlfqs_recent_cpu();
+          mlfqs_load_avg();
+      }
+    }
+  }
+
   thread_wakeup(ticks);//OS BOOT이후 TICKS와 비교
 }
 

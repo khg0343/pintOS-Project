@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed-point.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -60,6 +61,7 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+int thread_load_avg;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -118,6 +120,9 @@ thread_start (void)
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
+
+  /* Initialize Load Avg */
+  thread_load_avg = LOAD_AVG_DEFAULT;
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -642,4 +647,57 @@ bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread
 bool CompareDonatePriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
 {
   return list_entry(thread_1, struct thread, donation_elem)->priority > list_entry(thread_2, struct thread, donation_elem) -> priority;
+}
+
+
+void mlfqs_cal_priority(struct thread *thrd){
+  if(thrd != idle_thread) {
+    thrd->priority = PRI_MAX - fp_convert_X_to_integer_round(thrd->recent_cpu / 4) - (thrd->nice * 2);
+
+    if(thrd->priority < PRI_MIN){
+      thrd->priority = PRI_MIN;
+    } else if(thrd->priority > PRI_MAX){
+      thrd->priority = PRI_MAX;
+    }
+  }
+}
+
+void mlfqs_cal_recent_cpu(struct thread *thrd){
+  if(thrd != idle_thread) {
+    thrd->recent_cpu = fp_add_X_and_N(fp_mul_X_by_Y( fp_div_X_by_Y( fp_mul_X_by_N(thread_load_avg, 2) , fp_add_X_and_N(fp_mul_X_by_N(thread_load_avg, 2), 1)), thrd->recent_cpu) , thrd->nice);
+  }
+}
+
+void mlfqs_inc_recent_cpu(){
+  if(thread_current() != idle_thread){
+    thread_current()->recent_cpu = fp_add_X_and_N(thread_current()->recent_cpu, 1);
+  }
+}
+
+void mlfqs_priority(){
+  struct list_elem *e;
+  struct thread *thrd;
+
+  for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
+    thrd = list_entry(e, struct thread, allelem);
+    mlfqs_cal_priority(thrd);
+  }
+}
+
+void mlfqs_recent_cpu(){
+  struct list_elem *e;
+  struct thread *thrd;
+
+  for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
+    thrd = list_entry(e, struct thread, allelem);
+    mlfqs_cal_recent_cpu(thrd);
+  }
+}
+
+void mlfqs_load_avg(){
+  if(thread_current() != idle_thread) {
+    thread_load_avg = fp_add_X_and_Y(fp_mul_X_by_Y(fp_div_X_by_Y( fp_convert_N_to_fp(59), fp_convert_N_to_fp(60) ), thread_load_avg), fp_mul_X_by_N(fp_div_X_by_Y( fp_convert_N_to_fp(1), fp_convert_N_to_fp(60)), fp_add_X_and_Y(list_size(&ready_list) , 1)));
+  } else {
+    thread_load_avg = fp_add_X_and_Y(fp_mul_X_by_Y(fp_div_X_by_Y( fp_convert_N_to_fp(59), fp_convert_N_to_fp(60) ), thread_load_avg), fp_mul_X_by_N(fp_div_X_by_Y( fp_convert_N_to_fp(1), fp_convert_N_to_fp(60)), list_size(&ready_list)));
+  }
 }

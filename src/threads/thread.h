@@ -24,6 +24,10 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+#define NICE_DEFAULT 0
+#define RECENT_CPU_DEFAULT 0
+#define LOAD_AVG_DEFAULT 0
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -100,6 +104,10 @@ struct thread
    struct list_elem donation_elem;  //위 list를 관리하기 위한 element
    struct lock *wait_lock;          //이 lock이 release될 때까지 thread는 기다린다.
 
+   /*Variable for Advanced Scheduler*/
+   int nice;
+   int recent_cpu;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -153,4 +161,12 @@ void thread_sleep(int64_t ticks);
 void thread_wakeup(int64_t ticks);
 void thread_compare(void);
 bool CompareDonatePriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
+
+void mlfqs_cal_priority(struct thread *thrd);
+void mlfqs_cal_recent_cpu(struct thread *thrd);
+void mlfqs_inc_recent_cpu();
+void mlfqs_priority();
+void mlfqs_recent_cpu();
+void mlfqs_load_avg();
+
 #endif /* threads/thread.h */
