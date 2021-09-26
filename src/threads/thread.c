@@ -344,7 +344,7 @@ thread_set_priority (int new_priority)
 {
   struct thread *thrd_cur = thread_current();
 
-  thrd_cur->priority = new_priority;
+  thrd_cur->origin_priority = new_priority;
   reset_priority(thrd_cur, thrd_cur->priority);
   thread_compare(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
 }
@@ -630,19 +630,16 @@ void thread_wakeup(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시�
 
 void thread_compare()//Create 될때랑 priority 재 설정 할때.
 {
-  struct thread* cur = thread_current();
-  struct thread* top = list_entry(list_front(&ready_list), struct thread, elem);
-
-  // if(!list_empty(&ready_list)) {
-  //   if(cur->priority < top->priority) thread_yield();
-  // }
-
-  if(!list_empty(&ready_list)) {
-    if(thread_current()->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority) thread_yield();
-  }
+  if(!list_empty(&ready_list)&&(thread_current()->priority < list_entry(list_front(&ready_list),struct thread, elem)->priority))
+    thread_yield();
 }
 
 bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
 {
   return list_entry(thread_1, struct thread, elem)->priority > list_entry(thread_2, struct thread, elem) -> priority;
+}
+
+bool CompareDonatePriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
+{
+  return list_entry(thread_1, struct thread, donation_elem)->priority > list_entry(thread_2, struct thread, donation_elem) -> priority;
 }

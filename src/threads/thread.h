@@ -152,4 +152,5 @@ bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread
 void thread_sleep(int64_t ticks);
 void thread_wakeup(int64_t ticks);
 void thread_compare(void);
+bool CompareDonatePriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
 #endif /* threads/thread.h */

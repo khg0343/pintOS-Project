@@ -119,7 +119,7 @@ sema_up (struct semaphore *sema)
   }
     
   sema->value++;
-  thread_yield();   //thread unblock후 unblock된 thread가 running thread보다 priority가 높을 수 있으므로 yield해주어야함
+  thread_compare();   //thread unblock후 unblock된 thread가 running thread보다 priority가 높을 수 있으므로 yield해주어야함
   intr_set_level (old_level);
 }
 
@@ -292,9 +292,17 @@ void donate_priority()
 
     struct thread *thrd_cur = thread_current();
 
-    while(thrd_cur->wait_lock != NULL){
+    /*while(thrd_cur->wait_lock != NULL){
         thrd_cur->wait_lock->holder->priority = thrd_cur->priority;
         thrd_cur = thrd_cur->wait_lock->holder;
+    }*/
+    for(int depth = 0 ; depth<8 ; depth++)
+    {
+      if(!thrd_cur->wait_lock)
+        break;
+      struct thread *holder = thrd_cur->wait_lock->holder;
+      holder->priority = thrd_cur->priority;
+      thrd_cur = holder;
     }
     
     intr_set_level(old_level);
@@ -309,16 +317,25 @@ void reset_priority(struct thread *thrd, int *priority)
     ASSERT(!thread_mlfqs);
 
     struct thread *thrd_donator = thrd;
-    struct list donator_list;
-    list_init(&donator_list);
+    thrd_donator->priority = thrd_donator->origin_priority;
+    //struct list donator_list;
+    //list_init(&donator_list);// UNUSED???
 
-    while(!list_empty(&thrd_donator->donation_list)){
+    /*while(!list_empty(&thrd_donator->donation_list)){
         list_sort(&thrd_donator->donation_list, thread_comparepriority, NULL);
         thrd_donator = list_entry(list_front(&thrd_donator->donation_list), struct thread, donation_elem);
         
         if (*priority > thrd_donator->priority) break;
         *priority = thrd_donator->priority;
-    }
+    }*/
+  if(!list_empty(&thrd_donator->donation_list))
+  {
+    list_sort(&thrd_donator->donation_list,CompareDonatePriority,NULL);
+    struct thread *top = list_entry(list_front(&thrd_donator->donation_list),struct thread, donation_elem);
+    if(top->priority > thrd_donator-> priority)
+      thrd_donator->priority = top->priority;
+  }
+
 
     intr_set_level(old_level);
 }
