@@ -348,10 +348,11 @@ void
 thread_set_priority (int new_priority) 
 {
   struct thread *thrd_cur = thread_current();
-
-  thrd_cur->origin_priority = new_priority;
-  reset_priority(thrd_cur, thrd_cur->priority);
-  thread_compare(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
+  if(!thread_mlfqs){
+    thrd_cur->origin_priority = new_priority;
+    reset_priority(thrd_cur, thrd_cur->priority);
+    thread_compare(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
+  }
 }
 
 /* Returns the current thread's priority. */
@@ -366,30 +367,57 @@ void
 thread_set_nice (int nice UNUSED) 
 {
   /* Not yet implemented. */
+  enum intr_level old_level;
+  old_level = intr_disable();
+  thread_current()->nice = nice;
+  mlfqs_cal_priority(thread_current());
+  thread_compare();
+  intr_set_level(old_level);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  // /* Not yet implemented. */
+  // return 0;
+
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  int nice = thread_current()->nice;
+
+  intr_set_level(old_level);
+
+  return nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  int load_avg = fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_load_avg, 100));
+
+  intr_set_level(old_level);
+
+  return load_avg;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  int recent_cpu = fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_current()->recent_cpu, 100));
+
+  intr_set_level(old_level);
+
+  return recent_cpu;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
