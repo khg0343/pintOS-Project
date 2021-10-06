@@ -366,56 +366,30 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED) 
 {
-  enum intr_level old_level;
-  old_level = intr_disable();
-
   thread_current()->nice = nice;
   mlfqs_cal_priority(thread_current());
   thread_compare();
-  
-  intr_set_level(old_level);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  enum intr_level old_level;
-  old_level = intr_disable();
-
-  int nice = thread_current()->nice;
-
-  intr_set_level(old_level);
-
-  return nice;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  enum intr_level old_level;
-  old_level = intr_disable();
-
-  int load_avg = fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_load_avg, 100));
-
-  intr_set_level(old_level);
-
-  return load_avg;
+  return fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  enum intr_level old_level;
-  old_level = intr_disable();
-
-  int recent_cpu = fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_current()->recent_cpu, 100));
-
-  intr_set_level(old_level);
-
-  return recent_cpu;
+  return fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_current()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -653,7 +627,7 @@ void thread_wakeup(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시�
   while(it!= list_end(&sleep_list))
   {
     struct thread *cur = list_entry(it,struct thread, elem);
-    if(cur->WakeUpTicks > ticks) break; // 아직 일어날 시간이 아니기 때문에 break하고 함수 out.
+    if(cur->WakeUpTicks > ticks) break; // 아직 일어날이 아니기 때문에 break하고 함수 out.
     it= list_remove(it);
     thread_unblock(cur);
   }
@@ -678,13 +652,7 @@ bool thread_comparedonatepriority(struct list_elem *thread_1, struct list_elem *
 
 void mlfqs_cal_priority(struct thread *thrd){
   if(thrd != idle_thread) {
-    thrd->priority = PRI_MAX - fp_convert_X_to_integer_round(thrd->recent_cpu / 4) - (thrd->nice * 2);
-
-    if(thrd->priority < PRI_MIN){
-      thrd->priority = PRI_MIN;
-    } else if(thrd->priority > PRI_MAX){
-      thrd->priority = PRI_MAX;
-    }
+    thrd->priority = fp_sub_Y_from_X(PRI_MAX, fp_add_X_and_Y(fp_convert_X_to_integer_round(fp_div_X_by_N(thrd->recent_cpu,4)), fp_mul_X_by_N(thrd->nice, 2)));
   }
 }
 

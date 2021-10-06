@@ -287,8 +287,8 @@ void donate_priority()
 {
   enum intr_level old_level;
   old_level = intr_disable();
-  int level;
 
+  int level;
   struct thread *thrd_cur = thread_current();
 
   for (level = 0; level < 8; level++) //In Pintos Document, we can apply depth of nested priority donation, level 8)(Maximum)
@@ -317,8 +317,7 @@ void reset_priority(struct thread *thrd, int *priority)
   {
     list_sort(&thrd_donator->donation_list, thread_comparedonatepriority, NULL);
     struct thread *top = list_entry(list_front(&thrd_donator->donation_list), struct thread, donation_elem);
-    if (top->priority > thrd_donator->priority)
-      thrd_donator->priority = top->priority;
+    if (top->priority > thrd_donator->priority) thrd_donator->priority = top->priority;
   }
 
   intr_set_level(old_level);
@@ -345,14 +344,12 @@ bool sema_comparepriority(const struct list_elem *thread_1, const struct list_el
 {
   struct semaphore_elem *sema_1 = list_entry(thread_1, struct semaphore_elem, elem);
   struct semaphore_elem *sema_2 = list_entry(thread_2, struct semaphore_elem, elem);
-
   struct list *waiter_1 = &(sema_1->semaphore.waiters);
   struct list *waiter_2 = &(sema_2->semaphore.waiters);
+  struct list_elem *elem_1 = list_begin(waiter_1);
+  struct list_elem *elem_2 = list_begin(waiter_2);
 
-  // struct list_elem *elem_1 = list_begin(waiter_1);
-  // struct list_elem *elem_2 = list_begin(waiter_2);
-
-  return list_entry(list_begin(waiter_1), struct thread, elem)->priority > list_entry(list_begin(waiter_2), struct thread, elem)->priority;
+  return list_entry(elem_1, struct thread, elem)->priority > list_entry(elem_2, struct thread, elem)->priority;
 }
 
 /* Atomically releases LOCK and waits for COND to be signaled by
