@@ -22,11 +22,11 @@ Final Report
 ## Implementation
 
     struct thread
-  {
-    ...
-    int64_t WakeUpTicks;
-    /*Thread가 일어날 시간을 담는 Variable이다.*/
-  }; /* thread.h */
+    {
+        ...
+        int64_t WakeUpTicks;
+        /*Thread가 일어날 시간을 담는 Variable이다.*/
+    }; /* thread.h */
 
 Thread가 일어날 시간을 담는 변수이다.
 
