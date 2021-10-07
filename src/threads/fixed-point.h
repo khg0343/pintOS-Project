@@ -1,4 +1,4 @@
-// thread/fixed-point.h
+// threads/fixed-point.h
 #include <stdint.h>
 #ifndef FIXED_POINT_H
 #define FIXED_POINT_H

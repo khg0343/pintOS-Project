@@ -24,10 +24,6 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
-#define NICE_DEFAULT 0
-#define RECENT_CPU_DEFAULT 0
-#define LOAD_AVG_DEFAULT 0
-
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -124,6 +120,7 @@ struct thread
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
+extern bool thread_load_avg;
 
 void thread_init (void);
 void thread_start (void);

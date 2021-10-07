@@ -1,12 +1,12 @@
-CSED312 OS Lab 1
+**CSED312 OS Lab 1**
 ================
-Final Report
+**Final Report**
 ----------------
-컴퓨터공학과
-20180085 송수민 20180373 김현지
+<div style="text-align: right"> 20180085 송수민 20180373 김현지 </div>
+
 ------------------------------
-# I. Implementation of Alarm Clock
-## Analysis
+# **I. Implementation of Alarm Clock**
+## **Analysis**
 >Alarm Clock이란 Thread가 Sleep상태일 때, 이를 깨워 Running state로 만드는 기능이다. 현재 구현 된 Alarm  Clock을 보자.
 
     void timer_sleep (int64_t ticks) 
@@ -101,8 +101,11 @@ Thread의 전반적인 구성을 initialization할 때 위에서 선언한 list�
 
 >Thread_wakeup에서 sleep_list의 가장 앞의 thread의 일어날 시각이랑 현재 시각(ticks)를 비교하여 WakeUpTicks가 더 크면 아직 그 시각까지 도달하지 못한 것이므로 깨우지 않고, 그 반대라면 일어날 시각이므로 list에서 해당 thread를 지우고 unblock처리하여 ready status로 만들어준다.
 위와 같은 Logic으로 Sleeping 처리 함과 동시에 Block status로 만들고, 일어날 시간에 Unblock처리를 하여 Ready status로 만들어 Busy-wait에 비해 CPU Cycle을 효율적으로 줄일 수 있다.
-# II. Implementation of Priority Scheduling
-## Analysis
+
+</br></br>
+
+# **II. Implementation of Priority Scheduling**
+## **Analysis**
 >현재 구현되어 있는 thread 구조체에 member 변수로 priority가 있다. 이를 어떻게 사용하는지 알아보기 위해 Scheduling이 실행되는 yield, unblock 함수를 살펴보자.
     void thread_unblock (struct thread *t) 
     {
@@ -129,9 +132,9 @@ Thread의 전반적인 구성을 initialization할 때 위에서 선언한 list�
     }
 
 > list_push_back을 통해, priority는 고려하지 않고 들어오는 순서대로 ready_list에 뒤에 넣는 것을 볼 수 있다. 이제 Priority를 고려하여 ready_list에 넣고자 한다.
-## Brief Algorithm
+## **Brief Algorithm**
 >Scheduling시에 Priority를 고려하여 ready_list에 넣는다. 또한, thread를 create하거나 priority를 재설정 하였을 때 현재 실행되고 있는 thread의 priority와 비교하여 더 높다면 즉시 yield한다.
-## Implementation
+## **Implementation**
 
     void thread_unblock (struct thread *t) 
     {
@@ -198,12 +201,394 @@ Thread의 전반적인 구성을 initialization할 때 위에서 선언한 list�
 >Thread_compare에서 현재 thread와 ready_list의 top thread와 비교하여 ready_list에 있는 thread의 priority가 더 크다면 thread_yield를 호출한다. 여기서 주의할 점은 thread_set_priority는 thread_current와 직접적으로 비교하는 것이어서 직관적으로 작동 흐름이 보이나, create의 경우 current를 지정하는 과정이 없어서 주의할 필요가 있다. Create의 경우 생성된 thread의 priority가 ready_list에 있는 thread들의 priority 중에서 가장 크다면 ready_list의 top에 저장될 것이다. 이는 thread_unblock에서 이루어진다. 이후, thread_compare()가 실행되고, create될 때 실행 되고 있는 thread와 create되어 넣어진 thread를 비교하여, create된 thread의 priority가 더 크다면 바로 CPU를 내어주는 Logic이다.
 위 방법으로 thread의 priority를 고려하여 thread scheduling을 완성 할 수 있다.
 
+</br></br>
+
+# **III. Implementation of Priority Donation**
+## **Analysis**
+>현재 구현되어 있는 thread 구조체에 member 변수로 priority가 있다. 이를 어떻게 사용하는지 알아보기 위해 Scheduling이 실행되는 yield, unblock 함수를 살펴보자.
+    void thread_unblock (struct thread *t) 
+    {
+    enum intr_level old_level;
+    ASSERT (is_thread (t));
+    old_level = intr_disable ();
+    ASSERT (t->status == THREAD_BLOCKED);
+    list_push_back (&ready_list, &t->elem);
+    t->status = THREAD_READY;
+    intr_set_level (old_level);
+    }  
+
+    void thread_yield (void) 
+    {
+    struct thread *cur = thread_current ();
+    enum intr_level old_level;
+    ASSERT (!intr_context ());
+    old_level = intr_disable ();
+    if (cur != idle_thread) 
+        list_push_back (&ready_list, &cur->elem);
+    cur->status = THREAD_READY;
+    schedule ();
+    intr_set_level (old_level);
+    }
+
+> list_push_back을 통해, priority는 고려하지 않고 들어오는 순서대로 ready_list에 뒤에 넣는 것을 볼 수 있다. 이제 Priority를 고려하여 ready_list에 넣고자 한다.
+## **Brief Algorithm**
+>Scheduling시에 Priority를 고려하여 ready_list에 넣는다. 또한, thread를 create하거나 priority를 재설정 하였을 때 현재 실행되고 있는 thread의 priority와 비교하여 더 높다면 즉시 yield한다.
+## **Implementation**
+
+    void thread_unblock (struct thread *t) 
+    {
+        enum intr_level old_level;
+        ASSERT (is_thread (t));
+        old_level = intr_disable ();
+        ASSERT (t->status == THREAD_BLOCKED);
+        list_insert_ordered(&ready_list, &t->elem, thread_comparepriority, NULL);
+        //list_push_back (&ready_list, &t->elem);
+        t->status = THREAD_READY;
+        intr_set_level (old_level);
+    }
+    void thread_yield (void) 
+    {
+        struct thread *cur = thread_current ();
+        enum intr_level old_level;
+        ASSERT (!intr_context ());
+        old_level = intr_disable ();
+        if (cur != idle_thread)
+            list_insert_ordered(&ready_list, &cur->elem, thread_comparepriority, NULL); // 0924
+            //list_push_back (&ready_list, &cur->elem);
+        cur->status = THREAD_READY;
+        schedule ();
+        intr_set_level (old_level);
+    }
+
+>Scheduling시 ready_list에 넣는 과정이 있는 method들이다. 기존에는 list_push_back으로 먼저 들어온 thread가 별도의 priority에 관한 순서 없이 실행이 되게 설계가 되어 있었는데, 이를 priority를 기준으로 정렬되게 list_insert_ordered로 대체하여 준다. 이때, Alarm-clock에서 사용하였던 비교함수처럼 thread_comparepriority를 선언 및 정의하여 사용한다. 이 함수에 관한 내용은 뒤에 후술한다. 그 외 변경사항은 없다.
+
+    bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
+    {
+        return list_entry(thread_1, struct thread, elem)->priority > list_entry(thread_2, struct thread, elem) -> priority;
+    }
 
 
 
+</br></br>
+
+# **IV. Implementation of Advanced Scheduler**
+## **Analysis**
+위에서 계속 사용하던 Priority Scheduling이 아닌 정해진 수식에 따라 thread의 priority를 계산해주는 Scheduling 기법을 Multi-Level Feedback Queue Schedulling(MLFQS)라 한다. 실행시에 -mlfqs 옵션에 따라 실행되며, 동시에 전역으로 선언된 thread_mlfqs boolean 값이 true로 setting된다. 이 변수값에 따라 실행되는 함수의 코드를 적절하게 작성해야한다. 
+
+아래의 세 변수는 MLFQS mode에서 priority를 결정하기 위한 변수들의 계산식이다.
+> **priority** 
+    > - priority : PRI_MAX - (recent_cpu/4) - (nice*2)
+    > - 4 tick 마다 모든 thread의 priority를 다시 계산
 
 
+> **recent_cpu** 
+    >- recent_cpu : (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
+    >- 최근에 thread가 CPU time 을 얼마나 많이 사용했는지를 나타내는 값
+    >- 1 tick 마다 running thread의 recent_cpu이 1씩 증가
+    >- 1초 마다 모든 thread의 recent_cpu를 다시 계산
+    >- 실수값
 
- 
+
+> **load_avg**
+    >- load_avg : (59/60) * load_avg + (1/60) * ready_threads<br>(*이 때 ready_threads는 ready or running thread의 수)
+    >- 1초 마다 load_avg값을 다시 계산
+    >- 실수값
 
 
+또한 PintOS는 부동소수점에 대한 계산을 지원하지 않기 때문에, recent_cpu, load_avg, priority등과 같은 계산식을 처리하기 위해서 아래와 같이 fixed-point에 대한 연산을 지정해주어야한다. 이는 pintOS 공식 문서를 참고하여 관련 함수를 구현해야 한다.
+|||
+|------|---|
+|Convert n to fixed point|n * f|
+|Convert x to integer (rounding toward zero)|x / f|
+|Convert x to integer (rounding to nearest)|(x + f / 2) / f if x >= 0, <br>(x - f / 2) / f if x <= 0.|
+|Add x and y|x + y|
+|Add x and n|x + n * f|
+|Subtract y from x|x - y|
+|Subtract n from x|x - n * f|
+|Multiply x by y|((int64_t) x) * y / f|
+|Multiply x by n|x * n|
+|Divide x by y|((int64_t) x) * y / f|
+|Divide x by n|x / n|
+
+## **Brief Algorithm**
+ nice, recent_cpu값에 대한 변수를 thread에 추가하고, 전체 전역 변수로 load_avg를 추가한다. 또한, implement되지 않은 thread_get_nice, thread_get_recent_cpu, thread_get_load_avg, thread_set_nice에 대한 함수를 작성한다.<br>
+ mlfqs mode에서는 donation이 일어나지 않기 때문에 lock_acquire과 lock_release함수에서 해당 부분에 대해 고려하여 수정해야하고, priority set도 임의로 실행되지 않도록 수정해야한다.
+
+## **Implementation**
+- 먼저 부동소수점 연산과 관련된 함수를 아래와 같이 fixed-point.h에 구현하였다.
+  
+    ```c
+    // threads/fixed-point.h
+
+    #include <stdint.h>
+    #ifndef FIXED_POINT_H
+    #define FIXED_POINT_H
+    #define F (1 << 14)
+
+    int fp_convert_N_to_fp(int N) { return N*F; }
+    int fp_convert_X_to_integer_zero(int X) { return X/F; }
+    int fp_convert_X_to_integer_round(int X) { return (X>=0)?(X+F/2)/F:(X-F/2)/F; }
+
+    int fp_add_X_and_Y(int X, int Y) { return X+Y; }
+    int fp_sub_Y_from_X(int X, int Y) { return X-Y; }
+    int fp_add_X_and_N(int X, int N) { return X+N*F; }
+    int fp_sub_N_from_X(int X, int N) { return X-N*F; }
+
+    int fp_mul_X_by_Y(int X, int Y) { return ((int64_t)X)*Y/F; }
+    int fp_mul_X_by_N(int X, int N) { return X*N; }
+
+    int fp_div_X_by_Y(int X, int Y) { return ((int64_t)X)*F/Y;}
+    int fp_div_X_by_N(int X, int N) { return X/N; }
+
+    #endif
+    ```
+
+- nice, recent_cpu값에 대한 변수를 thread에 추가하고, 초기화해주었다.  
+    ```cpp
+    // threads/thread.h
+
+    struct thread
+    {
+        ...
+        /*Variable for Advanced Scheduler*/
+        int nice;
+        int recent_cpu;
+        ...
+    };
+    ```
+
+    ```cpp
+    // threads/thread.h
+
+    static void
+    init_thread (struct thread *t, const char *name, int priority)
+    {
+        ...
+        t->nice = 0;
+        t->recent_cpu = 0;
+        ...
+    }
+    ```
+
+  
+- 전체 전역 변수로 load_avg를 추가하고, 초기화하였다.
+    ```cpp
+    //threads/thread.c
+    ...
+
+    int thread_load_avg;
+
+    ...
+   
+    void
+    thread_start (void) 
+    {
+        ...
+        /* Initialize Load Avg */
+        thread_load_avg = 0;
+    }
+    ```
+
+- mlfqs mode에서 priority를 결정하기 위한 변수(recent_cpu, load_avg)들의 계산식을 구현하였다.
+    ```cpp
+    // threads/thread.c
+
+    void mlfqs_cal_priority(struct thread *thrd){
+        //priority = PRI_MAX - (recent_cpu/4) - (nice*2)
+        if(thrd != idle_thread) {
+            thrd->priority = fp_sub_Y_from_X(PRI_MAX, fp_add_X_and_Y(
+            fp_convert_X_to_integer_round(fp_div_X_by_N(thrd->recent_cpu, 4)), 
+            fp_mul_X_by_N(thrd->nice, 2)));
+        }
+    }
+
+    void mlfqs_cal_recent_cpu(struct thread *thrd){
+        //recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
+        if(thrd != idle_thread) {
+            thrd->recent_cpu = fp_add_X_and_N(fp_mul_X_by_Y(
+            fp_div_X_by_Y( fp_mul_X_by_N(thread_load_avg, 2),
+            fp_add_X_and_N(fp_mul_X_by_N(thread_load_avg, 2), 1)),
+            thrd->recent_cpu) , thrd->nice);
+        }
+    }
+
+    void mlfqs_inc_recent_cpu(){
+        // 1 tick 마다 running thread의 recent_cpu이 1씩 증가
+        if(thread_current() != idle_thread){
+            thread_current()->recent_cpu = 
+            fp_add_X_and_N(thread_current()->recent_cpu, 1);
+        }
+    }
+
+    void mlfqs_priority(){
+        //4 tick 마다 모든 thread의 priority를 다시 계산
+        struct list_elem *e;
+        struct thread *thrd;
+
+        for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e))
+        {
+            thrd = list_entry(e, struct thread, allelem);
+            mlfqs_cal_priority(thrd);
+        }
+    }
+
+    void mlfqs_recent_cpu(){
+        //1초 마다 모든 thread의 recent_cpu를 다시 계산
+        struct list_elem *e;
+        struct thread *thrd;
+
+        for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e))
+        {
+            thrd = list_entry(e, struct thread, allelem);
+            mlfqs_cal_recent_cpu(thrd);
+        }
+    }
+
+    void mlfqs_load_avg(){
+        //load_avg = (59/60) * load_avg + (1/60) * ready_threads
+
+        if(thread_current() != idle_thread) {
+            thread_load_avg = fp_add_X_and_Y(
+            fp_mul_X_by_Y(fp_div_X_by_Y(
+                fp_convert_N_to_fp(59), fp_convert_N_to_fp(60)), 
+                thread_load_avg), 
+            fp_mul_X_by_N(fp_div_X_by_Y( 
+                fp_convert_N_to_fp(1), fp_convert_N_to_fp(60)),
+                fp_add_X_and_Y(list_size(&ready_list) , 1)));
+        } else {
+            thread_load_avg = fp_add_X_and_Y(
+                fp_mul_X_by_Y(fp_div_X_by_Y( 
+                    fp_convert_N_to_fp(59), fp_convert_N_to_fp(60)), 
+                thread_load_avg), 
+                fp_mul_X_by_N(fp_div_X_by_Y( 
+                    fp_convert_N_to_fp(1), fp_convert_N_to_fp(60)), 
+                list_size(&ready_list)));
+        }
+    }
+    ```
+
+- nice를 set/get하는 함수(thread_set_nice, thread_get_nice), recent_cpu, load_avg get하는 함수를 구현하였다.
+    ```cpp
+    // threads/thread.c
+
+    /* Sets the current thread's nice value to NICE. */
+    thread_set_nice (int nice) 
+    {
+        //현재 thread의 nice를 input한 nice로 set.
+        thread_current()->nice = nice;
+    }
+
+    /* Returns the current thread's nice value. */
+    int
+    thread_get_nice (void) 
+    {
+        //현재 thread의 nice를 return
+        return thread_current()->nice;
+    }
+
+    /* Returns 100 times the system load average. */
+    int
+    thread_get_load_avg (void) 
+    {
+        //현재 system의 load_avg를 100배한 값을 부동소수점 연산으로 계산하고 return
+        return fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_load_avg, 100));
+    }
+
+    /* Returns 100 times the current thread's recent_cpu value. */
+    int
+    thread_get_recent_cpu (void) 
+    {
+        //현재 thread의 recent_cpu를 100배한 값을 부동소수점 연산으로 계산하고 return
+        return fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_current()->recent_cpu, 100));
+    }
+
+    ```
+
+- 일정 시간마다 다시 계산해야하는 값에 대한 함수들을 호출하도록 구현하였다.
+    ```cpp
+    // threads/thread.c
+
+    /* Timer interrupt handler. */
+    static void
+    timer_interrupt (struct intr_frame *args UNUSED)
+    {
+        ticks++; //Since OS booting.
+        thread_tick ();
+
+        if(!thread_mlfqs){
+            thread_wakeup(ticks);   //OS BOOT이후 TICKS와 비교
+        } else {
+            // 1 tick 마다 running thread의 recent_cpu이 1씩 증가
+            mlfqs_inc_recent_cpu();  
+
+            if(!(ticks % TIMER_SLICE)){
+                //4 tick 마다 모든 thread의 priority를 다시 계산
+                mlfqs_priority(); 
+
+                if(!(ticks % TIMER_FREQ)){
+                    //1초 마다 모든 thread의 recent_cpu와 load_avg를 다시 계산
+                    mlfqs_recent_cpu();
+                    mlfqs_load_avg();
+                }
+            }
+            thread_wakeup(ticks);
+        }
+    }
+    ```
+
+- mlfqs mode에서 lock_acquire과 lock_release에 donation과 관련된 부분을 제거하고, priority set도 임의로 실행되지 않도록 수정하였다.
+    ```cpp
+    // threads/synch.c
+
+    void lock_acquire(struct lock *lock)
+    {
+        ...
+        if (!thread_mlfqs) {
+            if (lock->holder) {
+                thrd_cur->wait_lock = lock;
+                list_insert_ordered(&lock->holder->donation_list, &thrd_cur->donation_elem, thread_comparepriority, NULL);
+                donate_priority();
+            };
+        }
+
+        ...
+        if (!thread_mlfqs)
+            thrd_cur->wait_lock = NULL;
+        ...
+    }
+
+    void lock_release(struct lock *lock)
+    {
+        ...
+
+        if (!thread_mlfqs) {
+            lock_remove(lock);
+            lock->holder->priority = lock->holder->origin_priority;
+            reset_priority(lock->holder, &(lock->holder->priority));
+        }
+        ...
+    }
+
+    ```
+
+    ```cpp
+    // threads/thread.c
+
+    /* Sets the current thread's priority to NEW_PRIORITY. */
+    void
+    thread_set_priority (int new_priority) 
+    {
+        struct thread *thrd_cur = thread_current();
+        if(!thread_mlfqs){      
+            //mlfqs모드에서는 아래의 과정이 필요하지 않다.
+            thrd_cur->origin_priority = new_priority;
+            reset_priority(thrd_cur, thrd_cur->priority);
+            thread_compare(); 
+        }
+    }
+    ```
+
+
+<br><br>
+
+# **Result**

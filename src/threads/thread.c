@@ -122,7 +122,7 @@ thread_start (void)
   sema_down (&idle_started);
 
   /* Initialize Load Avg */
-  thread_load_avg = LOAD_AVG_DEFAULT;
+  thread_load_avg = 0;
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -364,11 +364,9 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int nice) 
 {
   thread_current()->nice = nice;
-  mlfqs_cal_priority(thread_current());
-  thread_compare();
 }
 
 /* Returns the current thread's nice value. */
@@ -482,8 +480,8 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->donation_list);
   t->wait_lock = NULL;
 
-  t->nice = NICE_DEFAULT;
-  t->recent_cpu = RECENT_CPU_DEFAULT;
+  t->nice = 0;
+  t->recent_cpu = 0;
 
   t->magic = THREAD_MAGIC;
 
