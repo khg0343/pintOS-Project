@@ -93,7 +93,7 @@ Thread의 전반적인 구성을 initialization할 때 위에서 선언한 list�
         while(it!= list_end(&sleep_list))
         {
             struct thread *cur = list_entry(it,struct thread, elem);
-            if(cur->WakeUpTicks > ticks) break; // 아직 일어날이 아니기 때문에 break하고 함수 out.
+            if(cur->WakeUpTicks > ticks) break; // 아직 일어날때가 아니기 때문에 break하고 함수 out.
             it= list_remove(it);
             thread_unblock(cur);
         }
@@ -101,6 +101,107 @@ Thread의 전반적인 구성을 initialization할 때 위에서 선언한 list�
 
 >Thread_wakeup에서 sleep_list의 가장 앞의 thread의 일어날 시각이랑 현재 시각(ticks)를 비교하여 WakeUpTicks가 더 크면 아직 그 시각까지 도달하지 못한 것이므로 깨우지 않고, 그 반대라면 일어날 시각이므로 list에서 해당 thread를 지우고 unblock처리하여 ready status로 만들어준다.
 위와 같은 Logic으로 Sleeping 처리 함과 동시에 Block status로 만들고, 일어날 시간에 Unblock처리를 하여 Ready status로 만들어 Busy-wait에 비해 CPU Cycle을 효율적으로 줄일 수 있다.
+# II. Implementation of Priority Scheduling
+## Analysis
+>현재 구현되어 있는 thread 구조체에 member 변수로 priority가 있다. 이를 어떻게 사용하는지 알아보기 위해 Scheduling이 실행되는 yield, unblock 함수를 살펴보자.
+    void thread_unblock (struct thread *t) 
+    {
+    enum intr_level old_level;
+    ASSERT (is_thread (t));
+    old_level = intr_disable ();
+    ASSERT (t->status == THREAD_BLOCKED);
+    list_push_back (&ready_list, &t->elem);
+    t->status = THREAD_READY;
+    intr_set_level (old_level);
+    }  
+
+    void thread_yield (void) 
+    {
+    struct thread *cur = thread_current ();
+    enum intr_level old_level;
+    ASSERT (!intr_context ());
+    old_level = intr_disable ();
+    if (cur != idle_thread) 
+        list_push_back (&ready_list, &cur->elem);
+    cur->status = THREAD_READY;
+    schedule ();
+    intr_set_level (old_level);
+    }
+
+> list_push_back을 통해, priority는 고려하지 않고 들어오는 순서대로 ready_list에 뒤에 넣는 것을 볼 수 있다. 이제 Priority를 고려하여 ready_list에 넣고자 한다.
+## Brief Algorithm
+>Scheduling시에 Priority를 고려하여 ready_list에 넣는다. 또한, thread를 create하거나 priority를 재설정 하였을 때 현재 실행되고 있는 thread의 priority와 비교하여 더 높다면 즉시 yield한다.
+## Implementation
+
+    void thread_unblock (struct thread *t) 
+    {
+        enum intr_level old_level;
+        ASSERT (is_thread (t));
+        old_level = intr_disable ();
+        ASSERT (t->status == THREAD_BLOCKED);
+        list_insert_ordered(&ready_list, &t->elem, thread_comparepriority, NULL);
+        //list_push_back (&ready_list, &t->elem);
+        t->status = THREAD_READY;
+        intr_set_level (old_level);
+    }
+    void thread_yield (void) 
+    {
+        struct thread *cur = thread_current ();
+        enum intr_level old_level;
+        ASSERT (!intr_context ());
+        old_level = intr_disable ();
+        if (cur != idle_thread)
+            list_insert_ordered(&ready_list, &cur->elem, thread_comparepriority, NULL); // 0924
+            //list_push_back (&ready_list, &cur->elem);
+        cur->status = THREAD_READY;
+        schedule ();
+        intr_set_level (old_level);
+    }
+
+>Scheduling시 ready_list에 넣는 과정이 있는 method들이다. 기존에는 list_push_back으로 먼저 들어온 thread가 별도의 priority에 관한 순서 없이 실행이 되게 설계가 되어 있었는데, 이를 priority를 기준으로 정렬되게 list_insert_ordered로 대체하여 준다. 이때, Alarm-clock에서 사용하였던 비교함수처럼 thread_comparepriority를 선언 및 정의하여 사용한다. 이 함수에 관한 내용은 뒤에 후술한다. 그 외 변경사항은 없다.
+
+    bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
+    {
+        return list_entry(thread_1, struct thread, elem)->priority > list_entry(thread_2, struct thread, elem) -> priority;
+    }
+
+>전체적인 Logic은 비슷하나, priority가 큰 entry가 앞에 위치하여야 하기 때문에 부등호가 반대로 바뀌었다. 또한, 위에 서술한 동일한 이유로 등호는 붙이지 않는다.
+
+>Priority를 고려하여 줄 상황이 2가지 더 존재한다. Priority를 재설정하거나, thread를 create하여 새로운 thread와 기존의 thread들 간의 prioirty를 비교해줄 필요가 있는 상황이다. 이 상황은 thread_create와 thread_set_priority에서 구현한다.
+
+    void thread_set_priority (int new_priority) 
+    {
+        struct thread *thrd_cur = thread_current();
+        if(!thread_mlfqs){
+            thrd_cur->origin_priority = new_priority;
+            reset_priority(thrd_cur, thrd_cur->priority);
+            thread_compare(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
+        }
+    }
+    tid_t thread_create (const char *name, int priority, thread_func *function, void *aux) 
+    {
+        …
+        /* Thread가 생성완료 되기 전, Unblocked처리를 해주어 Ready Queue에 넣는다. */
+        thread_unblock (t);
+        thread_compare(); //Thread가 생성 후 생성된 thread와 ready에 있는 top thread를 비교하여 생성된게 더 크면 생성된 것 부터 실행.
+        return tid;
+    }
+
+>먼저, thread_set_priority를 보면 thread_compare()를 볼 수 있다. 위 2줄은 priority donation을 위한 code 구현으로 뒤에서 설명한다. 대략적으로 설명하면, 현재 thread의 priority를 재설정한다. 재설정 후에 기존 thread ready_list에 있는 thread가 재설정된 priority보다 크다면 바로 해당 thread에 yield해주어야 한다. 이는 thread_compare()에서 실행한다. 이 함수는 바로 뒤에 설명한다. Thread_create()도 같은 맥락으로 새로운 thread가 생성되었으므로 생성된 thread의 priority와 기존 thread들의 prioirity를 비교하여 생성된 thread의 priority가 더 크다면 바로 이 thread에 CPU를 내주어야 한다.
+
+    void thread_compare()//Create 될때랑 priority 재 설정 할때.
+    {
+        if(!list_empty(&ready_list)&&(thread_current()->priority < list_entry(list_front(&ready_list),struct thread, elem)->priority))
+            thread_yield();
+    }
+
+>Thread_compare에서 현재 thread와 ready_list의 top thread와 비교하여 ready_list에 있는 thread의 priority가 더 크다면 thread_yield를 호출한다. 여기서 주의할 점은 thread_set_priority는 thread_current와 직접적으로 비교하는 것이어서 직관적으로 작동 흐름이 보이나, create의 경우 current를 지정하는 과정이 없어서 주의할 필요가 있다. Create의 경우 생성된 thread의 priority가 ready_list에 있는 thread들의 priority 중에서 가장 크다면 ready_list의 top에 저장될 것이다. 이는 thread_unblock에서 이루어진다. 이후, thread_compare()가 실행되고, create될 때 실행 되고 있는 thread와 create되어 넣어진 thread를 비교하여, create된 thread의 priority가 더 크다면 바로 CPU를 내어주는 Logic이다.
+위 방법으로 thread의 priority를 고려하여 thread scheduling을 완성 할 수 있다.
+
+
+
+
+
 
 
  
