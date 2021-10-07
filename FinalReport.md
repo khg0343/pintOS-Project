@@ -16,5 +16,93 @@ Final Report
         while (timer_elapsed (start) < ticks) 
         thread_yield ();
     }
+>현재 구현되어 있는 timer_sleep이다. 여기서 start는 컴퓨터가 부팅되면서 작동한 timer의 값이다. Timer_elapsed는 timer_sleep이 시작 된 시간을 현재의 시간에서 빼주는 값을 return하는 함수이다. 즉, timer_sleep이 얼마나 실행되었는지 알 수 있는 함수이다. 이 값을 ticks와 비교해 ticks가 되기 전까지 계속 일어날 Thread가 있는지 확인하는 구조인 것이다. 이는 매번 일어날 Thread가 있는지 확인하여야 하고 이를 위해 지속해서 loop가 작동하기 때문에 비효율적이다. 이를 Busy-Waiting 방식이라 한다
+## Brief Algorithm
+>Timer_sleep이 실행되면 thread_sleep()에서 thread가 일어날 시간을 Parameter로 넘겨 이를 기억한다. 이후, 해당 thread를 Block 처리하고 sleep_list에 넣는다.. 일어날 시간이 되면 다시 thread를 unblock처리하고, sleep_list에서 지운다.
+## Implementation
+
+    struct thread
+  {
+    ...
+    int64_t WakeUpTicks;
+    /*Thread가 일어날 시간을 담는 Variable이다.*/
+  }; /* thread.h */
+
+Thread가 일어날 시간을 담는 변수이다.
+
+    static struct list sleep_list; /* thread.c*/
+
+자고 있는 thread들을 담기 위한 list를 전역으로 선언하였다. 이는 다른 ready_list, all_list와 같은 방식을 착안한 것이다.
+
+    void thread_init()
+    {
+        …
+        list_init(&sleep_list);
+    }
+
+Thread의 전반적인 구성을 initialization할 때 위에서 선언한 list의 Initialization을 진행한다.
+
+    void timer_sleep (int64_t ticks) 
+    {
+        int64_t start = timer_ticks ();
+        ASSERT (intr_get_level () == INTR_ON);
+        /*while (timer_elapsed (start) < ticks) 
+        thread_yield ();*/
+        thread_sleep(start+ticks);
+    }
+
+>Thread를 Sleeping Thread로 만드는 것의 첫 부분이다. 뒤에 후술 할 thread_sleep(ticks) 를 호출 하는데, timer_sleep에서 thread_sleep에 넘겨주는 start+ticks는 Sleeping 처리될 thread가 후에 일어날 시간이다. Start = timer_ticks()로 assign 되어 있는데, timer_ticks()는 현재 ticks를 return 해주는 method이다. 따라서, 현재 시간에 Sleeping tick를 더하면 일어날 시각의 정보가 만들어 지는 것이다. 이렇게 하면, 매번 인터럽트가 일어날 때마다 깨우는게 아니라, 위 정보를 이용하여 일어날 thread만 처리 할 수 있으니 기존의 방식보다 효율적이다.
+
+    void thread_sleep(int64_t ticks) // 여기서 ticks argument는 thread가 일어날 시간이다.
+    {
+        struct thread *cur = thread_current();
+        ASSERT(cur!=idle_thread);
+    /*Sleep 처리 되는 Thread는 Block될 Thread인데, Block을 call 하기 위해서는 인터럽트를 disable 해야한다.*/
+        enum intr_level old_level;
+        old_level = intr_disable();
+        cur->WakeUpTicks = ticks;
+        list_insert_ordered(&sleep_list,&cur->elem,CompareWakeUpTick,NULL);
+        thread_block();
+        intr_set_level(old_level);
+    }
+
+>Timer_sleep에서 일어날 시각을 전해주었으니 이를 바탕으로 현재 thread를 sleeping status로 변환해주는 method를 작성한다. Thread_sleep에서 넘겨 받는 ticks는 thread_current()가 일어날 시각이다. Thread pointer로 현재 thread를 받아오고, thread를 block처리 할 때 인터럽트가 발생하면 안되므로, 인터럽트를 해제하여 준다. 현재 thread info에 WakeUpTicks에 일어날 시각을 assign하고, 전역으로 선언한 sleep_list에 WakeUpTicks가 작은 것이 list에 앞으로 오도록 넣어준다. 넣어주는 방법은 내제되어 있는 method인 list_insert_ordered를 사용하였고, 비교 함수는 CompareWakeUpTick을 새로 선언 및 정의 하였다. 이는 후술 하도록 한다. 이후, 이 thread는 일정 시간동안 Sleeping, 즉 ready state가 아닌 Block state가 되어야 하므로 thread_block을 처리하여주고, 인터럽트를 다시 받아들일 수 있게 처리해준다.
+
+    bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_elem, void *aux)
+    //sleep_elem:잘 Thread, slept_elem:자고있는 이미 list 안에 있는
+    {
+        return list_entry(sleep_elem,struct thread, elem) ->WakeUpTicks < list_entry(slept_elem,struct thread,elem)->WakeUpTicks;
+    }
+
+>위에서 언급한 WakeUpTicks를 비교하여 참 또는 거짓값을 넘겨주는 method이다. 방식은, list_insert_ordered에서 반복문을 통해 slept_elem을 앞에서부터 탐색한다. 앞에서부터 탐색하다가, 일어나는 시각의 값이 sleeping 처리 할 thread보다 큰 순간에 true를 return하고, list_insert를 실행한다. 크거나 같은 것이 아니라, 큰 순간 true를 return하는 이유는 만약 일어나는 시간의 값이 같은 thread가 이미 들어가 있었다고 가정해보자. 이 thread 앞에 sleeping thread를 넣어버리면 먼저 sleep_list에 들어왔음에도 불구하고 자신이 일어날 차례에 일어나지 못한다. 한 개의 thread가 그런일이 발생하였다면 문제가 적겠지만, 여러 개의 thread가 동일한 상황이 발생한다면, 제일 먼저 들어온 thread는 실행 되지 않을 수도 있다. 이러한 Starvation을 방지하기 위해 부등호를 초과로 설정한다.
+
+    static void timer_interrupt (struct intr_frame *args UNUSED)
+    {
+        ticks++; //Since OS booting.
+        thread_tick ();
+        if(!thread_mlfqs){
+        thread_wakeup(ticks);//OS BOOT이후 TICKS와 비교
+    ...
+     }
+
+>다음은 일어날 thread를 Wakeup 처리하는 과정이다. 먼저 Timer_interrupt를 보자. 컴퓨터가 booting되고 나서 ticks는 계속 증가한다. 첫번째 줄의 ticks는 전역으로 선언되어 있는 booting되고 나서의 시간을 가지고 있는 ticks이다. 이후, interrupt가 발생하면 thread_wakeup을 호출한다. 이때, 넘겨주는 ticks는 WakeUpTicks와 비교하기 위해 넘겨준다.
+
+    void thread_wakeup(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시을 의미함
+    {
+        struct list_elem *it = list_begin(&sleep_list);
+        while(it!= list_end(&sleep_list))
+        {
+            struct thread *cur = list_entry(it,struct thread, elem);
+            if(cur->WakeUpTicks > ticks) break; // 아직 일어날이 아니기 때문에 break하고 함수 out.
+            it= list_remove(it);
+            thread_unblock(cur);
+        }
+    }
+
+>Thread_wakeup에서 sleep_list의 가장 앞의 thread의 일어날 시각이랑 현재 시각(ticks)를 비교하여 WakeUpTicks가 더 크면 아직 그 시각까지 도달하지 못한 것이므로 깨우지 않고, 그 반대라면 일어날 시각이므로 list에서 해당 thread를 지우고 unblock처리하여 ready status로 만들어준다.
+위와 같은 Logic으로 Sleeping 처리 함과 동시에 Block status로 만들고, 일어날 시간에 Unblock처리를 하여 Ready status로 만들어 Busy-wait에 비해 CPU Cycle을 효율적으로 줄일 수 있다.
+
+
+ 
 
 
