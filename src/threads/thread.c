@@ -482,6 +482,9 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->donation_list);
   t->wait_lock = NULL;
 
+  t->nice = NICE_DEFAULT;
+  t->recent_cpu = RECENT_CPU_DEFAULT;
+
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
