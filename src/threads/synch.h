@@ -4,6 +4,8 @@
 #include <list.h>
 #include <stdbool.h>
 
+#define LEVEL_MAX 8 //priority donation maximum level 
+
 /* A counting semaphore. */
 struct semaphore 
   {
@@ -33,7 +35,7 @@ bool lock_held_by_current_thread (const struct lock *);
 void lock_remove(struct lock *);
 
 void priority_donation(struct lock*);
-void donate_priority(); // priority donation을 위한 함수
+void donate_priority(struct thread *thrd); // priority donation을 위한 함수
 void reset_donation(struct lock*);
 void reset_priority(struct thread*, int*);
 

@@ -117,7 +117,7 @@ void sema_up(struct semaphore *sema)
   }
 
   sema->value++;
-  thread_compare(); //thread unblock후 unblock된 thread가 running thread보다 priority가 높을 수 있으므로 yield해주어야함
+  thread_compare(); //thread unblock후 unblock된 thread가 running thread보다 priority가 높을 수 있으므로 compare함수를 호출해주어야함
   intr_set_level(old_level);
 }
 
@@ -202,7 +202,7 @@ void lock_acquire(struct lock *lock)
     {
       thrd_cur->wait_lock = lock;
       list_insert_ordered(&lock->holder->donation_list, &thrd_cur->donation_elem, thread_comparepriority, NULL);
-      donate_priority();
+      donate_priority(thrd_cur);
     };
   }
 
@@ -283,21 +283,19 @@ void lock_remove(struct lock *lock)
   }
 }
 
-void donate_priority()
+void donate_priority(struct thread *thrd)
 {
   enum intr_level old_level;
   old_level = intr_disable();
 
   int level;
-  struct thread *thrd_cur = thread_current();
-
-  for (level = 0; level < 8; level++) //In Pintos Document, we can apply depth of nested priority donation, level 8)(Maximum)
+  for (level = 0; level < LEVEL_MAX; level++) //In Pintos Document, we can apply depth of nested priority donation, level 8)(Maximum)
   {
-    if (!thrd_cur->wait_lock)
+    if (!thrd->wait_lock)
       break;
-    struct thread *holder = thrd_cur->wait_lock->holder;
-    holder->priority = thrd_cur->priority;
-    thrd_cur = holder;
+    struct thread *holder = thrd->wait_lock->holder;
+    holder->priority = thrd->priority;
+    thrd = holder;
   }
 
   intr_set_level(old_level);

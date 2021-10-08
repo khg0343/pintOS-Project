@@ -634,7 +634,7 @@ void thread_wakeup(int64_t ticks)//이 ticks는 boot되고 나서의 지난 시�
   }
 }
 
-void thread_compare()//Create 될때랑 priority 재 설정 할때.
+void thread_compare()//create 될때랑 priority 재설정 할때.
 {
   if(!list_empty(&ready_list)&&(thread_current()->priority < list_entry(list_front(&ready_list),struct thread, elem)->priority))
     thread_yield();
