@@ -427,6 +427,57 @@ void sema_up(struct semaphore *sema)
   ...
 }
 ```
+
+- Synchronization 중 Conditional Variable에 해당하는 method이다.
+  
+```cpp
+struct semaphore_elem
+{
+  struct list_elem elem;      /* List element. */
+  struct semaphore semaphore; /* This semaphore. */
+}
+void cond_wait(struct condition *cond, struct lock *lock)
+{
+  struct semaphore_elem waiter;
+
+  ASSERT(cond != NULL);
+  ASSERT(lock != NULL);
+  ASSERT(!intr_context());
+  ASSERT(lock_held_by_current_thread(lock));
+
+  sema_init(&waiter.semaphore, 0);
+  // list_push_back (&cond->waiters, &waiter.elem);
+  list_insert_ordered(&cond->waiters, &waiter.elem, sema_comparepriority, NULL); //sema compare priority에 따라 push back이 아닌 order하게 insert
+  lock_release(lock);
+  sema_down(&waiter.semaphore);
+  lock_acquire(lock);
+}
+void cond_signal(struct condition *cond, struct lock *lock UNUSED)
+{
+  ASSERT(cond != NULL);
+  ASSERT(lock != NULL);
+  ASSERT(!intr_context());
+  ASSERT(lock_held_by_current_thread(lock));
+
+  if (!list_empty(&cond->waiters))
+  {
+    list_sort(&cond->waiters, sema_comparepriority, NULL);
+    sema_up(&list_entry(list_pop_front(&cond->waiters), struct semaphore_elem, elem)->semaphore);
+  }
+}
+bool sema_comparepriority(const struct list_elem *thread_1, const struct list_elem *thread_2, void *aux)
+{
+  struct semaphore_elem *sema_1 = list_entry(thread_1, struct semaphore_elem, elem);
+  struct semaphore_elem *sema_2 = list_entry(thread_2, struct semaphore_elem, elem);
+  struct list *waiter_1 = &(sema_1->semaphore.waiters);
+  struct list *waiter_2 = &(sema_2->semaphore.waiters);
+  struct list_elem *elem_1 = list_begin(waiter_1);
+  struct list_elem *elem_2 = list_begin(waiter_2);
+
+  return list_entry(elem_1, struct thread, elem)->priority > list_entry(elem_2, struct thread, elem)->priority;
+}
+```
+>cond_wait이 호출되면 기존에는 list_push_back으로 들어오는 순서대로 뒤에 저장이 되었다. 이를 위와 마찬가지로 priority를 고려하여 list에 넣어준다. Conditional Variable은 Lock, Semaphore와 조금은 달리 semaphore_elem라는 구조체를 이용한다. Conditional Variable을 이용하여 여러 thread에 걸려있는 semaphore를 해제 및 할당 할 수 있기 때문에 이를 전체적으로 관리하는 semaphore_elem 구조체를 사용한다. 먼저 cond_wait에 호출되면 초기화를 거친 후 semaphore들의 가장 앞에 있는 thread의 priority를 비교하여 list에 넣어준다. 그 이후 sema_down에 가서 반복문에 계속 loop에 걸려있는다. 이후, cond_signal을 보내면은 loop가 걸려있는 동안 priority가 변경되었을 수도 있으므로 list_sort를 진행하고, 가장 앞에있는 entry를 pop시켜준다.
   
 </br></br>
 
