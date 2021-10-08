@@ -34,10 +34,8 @@ void lock_release (struct lock *);
 bool lock_held_by_current_thread (const struct lock *);
 void lock_remove(struct lock *);
 
-void priority_donation(struct lock*);
-void donate_priority(struct thread *thrd); // priority donation을 위한 함수
-void reset_donation(struct lock*);
-void reset_priority(struct thread*, int*);
+void donate_priority(struct thread *); // priority donation을 위한 함수
+void reset_priority(struct thread *); // priority reset을 위한 함수
 
 /* Condition variable. */
 struct condition 

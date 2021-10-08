@@ -120,7 +120,7 @@ struct thread
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
-extern bool thread_load_avg;
+// extern bool thread_load_avg;
 
 void thread_init (void);
 void thread_start (void);
@@ -158,7 +158,6 @@ void thread_wakeup(int64_t ticks);
 void thread_compare(void);
 bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_elem, void *aux);
 bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
-bool thread_comparedonatepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
 
 void mlfqs_cal_priority(struct thread *thrd);
 void mlfqs_cal_recent_cpu(struct thread *thrd);

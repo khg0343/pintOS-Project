@@ -207,9 +207,11 @@ void lock_acquire(struct lock *lock)
   }
 
   sema_down(&lock->semaphore);
+  lock->holder = thread_current();
+
   if (!thread_mlfqs)
     thrd_cur->wait_lock = NULL;
-  lock->holder = thread_current();
+
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -238,23 +240,17 @@ bool lock_try_acquire(struct lock *lock)
    handler. */
 void lock_release(struct lock *lock)
 {
-  enum intr_level old_level;
-  old_level = intr_disable();
-
   ASSERT(lock != NULL);
   ASSERT(lock_held_by_current_thread(lock));
 
   if (!thread_mlfqs)
   {
     lock_remove(lock);
-    lock->holder->priority = lock->holder->origin_priority;
-    reset_priority(lock->holder, &(lock->holder->priority));
+    reset_priority(lock->holder);
   }
 
   lock->holder = NULL;
   sema_up(&lock->semaphore);
-
-  intr_set_level(old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -272,9 +268,8 @@ void lock_remove(struct lock *lock)
   ASSERT(!thread_mlfqs);
 
   struct thread *thrd_cur = thread_current();
-  struct list_elem *e;
   struct list *list = &thrd_cur->donation_list;
-
+  struct list_elem *e;
   for (e = list_begin(list); e != list_end(list); e = list_next(e))
   {
     struct thread *thrd = list_entry(e, struct thread, donation_elem);
@@ -301,21 +296,22 @@ void donate_priority(struct thread *thrd)
   intr_set_level(old_level);
 }
 
-void reset_priority(struct thread *thrd, int *priority)
+void reset_priority(struct thread *thrd)
 {
   enum intr_level old_level;
   old_level = intr_disable();
 
   ASSERT(!thread_mlfqs);
 
-  struct thread *thrd_donator = thrd;
-  thrd_donator->priority = thrd_donator->origin_priority;
+  thrd->priority = thrd->origin_priority;
 
-  if (!list_empty(&thrd_donator->donation_list))
+  if (!list_empty(&thrd->donation_list))
   {
-    list_sort(&thrd_donator->donation_list, thread_comparedonatepriority, NULL);
-    struct thread *top = list_entry(list_front(&thrd_donator->donation_list), struct thread, donation_elem);
-    if (top->priority > thrd_donator->priority) thrd_donator->priority = top->priority;
+    list_sort(&thrd->donation_list, thread_comparepriority, NULL);
+    struct thread *front = list_entry(list_front(&thrd->donation_list), struct thread, donation_elem);
+    
+    if (front->priority > thrd->priority) 
+      thrd->priority = front->priority;
   }
 
   intr_set_level(old_level);

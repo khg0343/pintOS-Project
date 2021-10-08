@@ -350,7 +350,7 @@ thread_set_priority (int new_priority)
   struct thread *thrd_cur = thread_current();
   if(!thread_mlfqs){
     thrd_cur->origin_priority = new_priority;
-    reset_priority(thrd_cur, thrd_cur->priority);
+    reset_priority(thrd_cur);
     thread_compare(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
   }
 }
@@ -644,12 +644,6 @@ bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread
 {
   return list_entry(thread_1, struct thread, elem)->priority > list_entry(thread_2, struct thread, elem) -> priority;
 }
-
-bool thread_comparedonatepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
-{
-  return list_entry(thread_1, struct thread, donation_elem)->priority > list_entry(thread_2, struct thread, donation_elem) -> priority;
-}
-
 
 void mlfqs_cal_priority(struct thread *thrd){
   if(thrd != idle_thread) {

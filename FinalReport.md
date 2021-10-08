@@ -218,7 +218,7 @@ void thread_set_priority (int new_priority)
     struct thread *thrd_cur = thread_current();
     if(!thread_mlfqs){
         thrd_cur->origin_priority = new_priority;
-        reset_priority(thrd_cur, thrd_cur->priority);
+        reset_priority(thrd_cur);
         thread_compare(); // Priority 설정 한 후 확인 후 max priority에 따라 thread yield
     }
 }
@@ -337,38 +337,28 @@ void donate_priority(struct thread *thrd)
 
 ```cpp
 //threads/synch.c
-void reset_priority(struct thread *thrd, int *priority)
+void reset_priority(struct thread *thrd)
 {
   enum intr_level old_level;
   old_level = intr_disable();
 
   ASSERT(!thread_mlfqs);
 
-  struct thread *thrd_donator = thrd;
-  thrd_donator->priority = thrd_donator->origin_priority;
+  thrd->priority = thrd->origin_priority;
 
-  if (!list_empty(&thrd_donator->donation_list))
+  if (!list_empty(&thrd->donation_list))
   {
-    list_sort(&thrd_donator->donation_list, thread_comparedonatepriority, NULL);
-    struct thread *top = 
-        list_entry(list_front(&thrd_donator->donation_list), struct thread, donation_elem);
-    if (top->priority > thrd_donator->priority) thrd_donator->priority = top->priority;
+    list_sort(&thrd->donation_list, thread_comparepriority, NULL);
+    struct thread *front = list_entry(list_front(&thrd->donation_list), struct thread, donation_elem);
+    
+    if (front->priority > thrd->priority) 
+      thrd->priority = front->priority;
   }
 
   intr_set_level(old_level);
 }
 ```
 > donation이후 wait_lock이 release되면, priority donate받은 thread는 priority를 다시 원래의 값으로 변경되어야하기에, thread에 저장되어있는 origin_priority로 바꾸어준다. 이때 multiple donation이 일어난 경우, donation_list에 thread가 남아있기 때문에 이를 확인하고, donation list의 priority를 확인하여 높은 순으로 정렬한 후 가장 priority가 높은 thread가 해당 thread보다 priority가 더 높을 경우, 다시 donation을 받아 priority를 설정하도록 한다.
-
-- 이 때 donation list를 priority에 따라 sorting하기 위해 필요한 compare하는 함수(thread_comparedonatepriority)를 구현하였다.
-
-```cpp
-//threads/thread.c
-bool thread_comparedonatepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
-{
-  return list_entry(thread_1, struct thread, donation_elem)->priority > list_entry(thread_2, struct thread, donation_elem) -> priority;
-}
-```
 
 - 위에서 구현한 donate_priority함수를 이용하여 lock_acquire될 때 조건에 따라 donation이 진행되도록 구현하였다.
 
@@ -384,9 +374,8 @@ void lock_acquire(struct lock *lock)
         donate_priority(thrd_cur);
     };
 
-    sema_down(&lock->semaphore);
+    ...
     thrd_cur->wait_lock = NULL;
-    lock->holder = thread_current();
 }
 ```
 
@@ -400,11 +389,7 @@ void lock_release(struct lock *lock)
 {
     ...
     lock_remove(lock);
-    lock->holder->priority = lock->holder->origin_priority;
-    reset_priority(lock->holder, &(lock->holder->priority));
-
-    lock->holder = NULL;
-    sema_up(&lock->semaphore);
+    reset_priority(lock->holder);
     ...
 }
 ```
@@ -420,8 +405,8 @@ void lock_remove(struct lock *lock)
   ASSERT(!thread_mlfqs);
 
   struct thread *thrd_cur = thread_current();
-  struct list_elem *e;
   struct list *list = &thrd_cur->donation_list;
+  struct list_elem *e;
 
   for (e = list_begin(list); e != list_end(list); e = list_next(e))
   {
@@ -730,14 +715,13 @@ mlfqs mode에서는 donation이 일어나지 않기 때문에 lock_acquire과 lo
             if (lock->holder) {
                 thrd_cur->wait_lock = lock;
                 list_insert_ordered(&lock->holder->donation_list, &thrd_cur->donation_elem, thread_comparepriority, NULL);
-                donate_priority();
+                donate_priority(thrd_cur);
             };
         }
 
         ...
         if (!thread_mlfqs)
             thrd_cur->wait_lock = NULL;
-        ...
     }
 
     void lock_release(struct lock *lock)
@@ -746,8 +730,7 @@ mlfqs mode에서는 donation이 일어나지 않기 때문에 lock_acquire과 lo
 
         if (!thread_mlfqs) {
             lock_remove(lock);
-            lock->holder->priority = lock->holder->origin_priority;
-            reset_priority(lock->holder, &(lock->holder->priority));
+            reset_priority(lock->holder);
         }
         ...
     }
@@ -765,7 +748,7 @@ mlfqs mode에서는 donation이 일어나지 않기 때문에 lock_acquire과 lo
         if(!thread_mlfqs){      
             //mlfqs모드에서는 아래의 과정이 필요하지 않다.
             thrd_cur->origin_priority = new_priority;
-            reset_priority(thrd_cur, thrd_cur->priority);
+            reset_priority(thrd_cur);
             thread_compare(); 
         }
     }
