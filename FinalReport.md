@@ -844,4 +844,14 @@ mlfqs mode에서는 donation이 일어나지 않기 때문에 lock_acquire과 lo
 
 <br><br>
 
+# **Discussion**
+ㅇㅇㅇㅇ
+
+<br>
+
 # **Result**
+서버에서 make check를 입력하여 나온 모든 test에 대한 결과값이다.
+
+![Result](./img/ResultScreenShot.png)
+
+위와 같이 이번 PintOs Project 1의 모든 test를 pass한 모습을 볼 수 있다.
