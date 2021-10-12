@@ -782,8 +782,8 @@ mlfqs mode에서는 donation이 일어나지 않기 때문에 lock_acquire과 lo
 
                 if(!(ticks % TIMER_FREQ)){
                     //1초 마다 모든 thread의 recent_cpu와 load_avg를 다시 계산
-                    mlfqs_recent_cpu();
                     mlfqs_load_avg();
+                    mlfqs_recent_cpu();
                 }
             }
             thread_wakeup(ticks);
