@@ -181,8 +181,8 @@ timer_interrupt (struct intr_frame *args UNUSED)
     if(!(ticks % TIMER_SLICE)){
       mlfqs_priority();
       if(!(ticks % TIMER_FREQ)){
-          mlfqs_recent_cpu();
-          mlfqs_load_avg();
+        mlfqs_load_avg();
+        mlfqs_recent_cpu();  
       }
     }
     thread_wakeup(ticks);

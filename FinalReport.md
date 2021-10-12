@@ -72,6 +72,7 @@ void timer_sleep (int64_t ticks)
 ```
 
 >이때 thread_sleep(ticks) 를 호출 하는데, timer_sleep에서 thread_sleep에 넘겨주는 start+ticks는 Sleeping 처리될 thread가 후에 일어날 시간이다. Start = timer_ticks()로 assign 되어 있는데, timer_ticks()는 현재 ticks를 return 해주는 method이다. 따라서, 현재 시간에 Sleeping tick를 더하면 일어날 시각의 정보가 만들어 지는 것이다. 이렇게 하면, 매번 인터럽트가 일어날 때마다 깨우는게 아니라, 위 정보를 이용하여 일어날 thread만 처리 할 수 있으니 기존의 방식보다 효율적이다.
+
 <br>
 
 - Timer_sleep에서 일어날 시각을 전해주었으니 이를 바탕으로 현재 thread를 sleeping status로 변환해주는 method를 작성하였다. 
@@ -484,11 +485,13 @@ void cond_wait(struct condition *cond, struct lock *lock)
 
   sema_init(&waiter.semaphore, 0);
   // list_push_back (&cond->waiters, &waiter.elem);
-  list_insert_ordered(&cond->waiters, &waiter.elem, sema_comparepriority, NULL); //sema compare priority에 따라 push back이 아닌 order하게 insert
+  list_insert_ordered(&cond->waiters, &waiter.elem, sema_comparepriority, NULL);
+   //sema compare priority에 따라 push back이 아닌 order하게 insert
   lock_release(lock);
   sema_down(&waiter.semaphore);
   lock_acquire(lock);
 }
+
 void cond_signal(struct condition *cond, struct lock *lock UNUSED)
 {
   ASSERT(cond != NULL);
@@ -502,6 +505,7 @@ void cond_signal(struct condition *cond, struct lock *lock UNUSED)
     sema_up(&list_entry(list_pop_front(&cond->waiters), struct semaphore_elem, elem)->semaphore);
   }
 }
+
 bool sema_comparepriority(const struct list_elem *thread_1, const struct list_elem *thread_2, void *aux)
 {
   struct semaphore_elem *sema_1 = list_entry(thread_1, struct semaphore_elem, elem);
@@ -851,43 +855,44 @@ mlfqs mode에서는 donation이 일어나지 않기 때문에 lock_acquire과 lo
 > //하지만, 매 실행마다 결과가 크게 3가지로 나누어지는 것을 볼 수 있었고, 문제는 완전히 해결되지 않았다.
 문제가 해결되지 않아 PintOS 공식 문서의 FAQ부분을 읽어본 결과, TEST가 통과하지 않는다면 Timer Interrupt Handler 쪽을 살펴보라는 조언을 얻었다.
     
-    ```cpp
-    static void timer_interrupt (struct intr_frame *args UNUSED)
-    {
-        ticks++; //Since OS booting.
-        thread_tick ();
 
-        if(!thread_mlfqs){
-            thread_wakeup(ticks);//OS BOOT이후 TICKS와 비교
-        } else 
-        {
-            mlfqs_inc_recent_cpu();
-            if(!(ticks % TIMER_SLICE)){
-                mlfqs_priority();
+```cpp
+static void timer_interrupt (struct intr_frame *args UNUSED)
+{
+    ticks++; //Since OS booting.
+    thread_tick ();
+
+    if(!thread_mlfqs){
+        thread_wakeup(ticks);//OS BOOT이후 TICKS와 비교
+    } else {
+        mlfqs_inc_recent_cpu();
+        if(!(ticks % TIMER_SLICE)){
+            mlfqs_priority();
             if(!(ticks % TIMER_FREQ)){
                 mlfqs_recent_cpu();
                 mlfqs_load_avg();
             }
         }
         thread_wakeup(ticks);
-        }
-    }   
-    ```
+    }
+}   
+```
 
 > 위 코드가 수정 전의 timer interrupt method이다. Recent_cpu와 load_avg의 call 순서를 보면 막연히 공식 문서에 나온 순서대로 call을 한 것을 볼 수 있다. 그렇지만, priority와 recent_cpu라는 본질을 생각해보면, priority를 계산하기 위해 recent_cpu, load_avg, nice 모두 계산되어야 본래 원하는 목적을 달성할 수 있는데 각 함수를 보면 load_avg를 먼저 call하여 계산을 진행하고 recent_cpu를 호출해야 올바르다고 할 수 있다. 그 이유는 recent_cpu에 priority를 계산하는 code가 있도록 구현했기 때문이다. 이에 따라 다음과 같이 코드를 수정하였다. 그 결과 문제가 모두 해결되었다.
 
-    ```cpp
-     if(!(ticks % TIMER_FREQ)){
-                mlfqs_load_avg();  
-                mlfqs_recent_cpu();          
-            }
-    ```
+```cpp
+if(!(ticks % TIMER_FREQ)){
+    mlfqs_load_avg();  
+    mlfqs_recent_cpu();          
+}
+```
 
 ## 2. Prioirty vs. Origin_Priority Issue on Priority Donation
-> Priority donation을 구현 할 때 처음 작성시에는 set priority부분에서 priority에 새로운 값을 대입하였다. 구현하고자 하는 방향에는 origin_priority와 priority를 구분하였는데, priority를 reset하거나 set할 때 priority에 대입을 하다보니 priority donation 중에 일어난 priority와 값이 구분되지 않아 본래의 priority로 돌아가고자 할 때 문제가 생기는 현상이 발생하였다. 이에 대한 해결 방법으로, set 또는 reset 하는 priority는 origin_priority에 대입하고, 그 외 priority donation 등 좀더 포괄적으로 많은 기능을 수행하는 priority는 priority 변수에 대입하였다. 그 결과 문제는 해결되었다.
+> Priority donation을 구현할 때 처음 작성시에는 set priority부분에서 priority에 새로운 값을 대입하였다. 구현하고자 하는 방향에는 origin_priority와 priority를 구분하였는데, priority를 reset하거나 set할 때 priority에 대입을 하다보니 priority donation 중에 일어난 priority와 값이 구분되지 않아 본래의 priority로 돌아가고자 할 때 문제가 생기는 현상이 발생하였다. 이에 대한 해결 방법으로, set 또는 reset 하는 priority는 origin_priority에 대입하고, 그 외 priority donation 등 좀더 포괄적으로 많은 기능을 수행하는 priority는 priority 변수에 대입하였다. 그 결과 문제는 해결되었다.
 
 ## 3. What We have Learned
 > 이번 과제를 통해 thread들이 어떻게 제어되는지, 공유 자원에 대해서 어떻게 관리되어야 하고 그 방법은 무엇들이 있는지, 처음에 고안한 thread scheduling 정책 이외에 다른 정책으로는 어떠한 것들이 있는지에 대해 배우고 이를 코드로 구현해보았다. 구현 중 어려웠던 부분은 time 문제라고 생각한다. time을 thread들이 동시에 사용하기 때문에, 어떠한 작업이 진행되고 있을 때 다른 thread에서 일어나는 일들을 고려해야 하고, 그 일들로 인해 현재 running thread에게는 어떤 영향을 미치는지, 또한 예정되어 있던 일들이 어떻게 수정되어야 하는지를 고려하는 것이 상당히 까다로웠다. Discussion 1번도 같은 맥락이라고 생각한다. 결국 이 문제도 thread들이 CPU를 점유하고 있어야 할 Time이 틀렸기 때문에 발생했다고 생각한다. Operating System을 구현 할 때 Concurrency Issue가 상당히 중요하고 까다로운 문제라는 것을 배웠다.
+
 <br>
 
 # **Result**
