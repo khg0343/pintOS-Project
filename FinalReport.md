@@ -58,7 +58,7 @@ void thread_init()
 
 <br>
 
-- Thread를 Sleeping Thread로 만드는 것의 첫 부분이다. (TODO : ???)
+- Thread를 Sleeping Thread로 만드는 것의 첫 부분이다. 
 
 ```cpp
 void timer_sleep (int64_t ticks) 
@@ -362,7 +362,7 @@ void donate_priority(struct thread *thrd)
 
 > pintOS 공식문서에 따르면 nested priority donation의 최대 깊이는 8로, chain처럼 연결된 donation list를 순회하며 priority donation을 실행한다. thrd_cur의 wait_lock이 없을때까지 donation chain의 말단의 thread부터 차례로 donation이 이루어진다.
 
-> //TODO : 시행착오 넣으면 될 듯 (처음에 이렇게 했는데 안돼서 이렇게 바꿨다 어쩌구) 
+
 
 <br>
 
@@ -845,7 +845,46 @@ mlfqs mode에서는 donation이 일어나지 않기 때문에 lock_acquire과 lo
 <br><br>
 
 # **Discussion**
-ㅇㅇㅇㅇ
+## 1. MLFQ Nice Test Fail Issue
+> 위 Test를 진행하던 도중, 개인 Vmware에서는 통과가 되었지만 서버에서는 통과가 되지 않는 문제가 발생하였다. 원인을 분석한 결과, 첫번째 threads가 지정된 시간보다 훨씬 CPU를 점유하고 있다는 것으로 파악되었다. 코드를 분석해보았을 때, mlfqs모드가 아닌 일반모드에서는 nice에 의해 priority가 변하지 않기 때문에 관련이 없지만, mlfqs모드에서는 nice에 의해 priority가 변하기 때문에 이를 실시간으로 update 시켜야 할 필요가 있다고 생각했다. 다음과 같은 과정으로 코드를 수정하였다. 
+> Nice를 계산하여 priority를 계산하는 method에 priority를 sorting해주는 코드를 작성한다. 이유는 priority를 계산하는 즉시 ready_list에 있는 thread들의 priority 순서를 update 해주어야 한다고 생각했다. 그 결과, thread들이 점유하고 있어야 하는 시간보다 훨씬 적게 CPU를 점유하는 상황이 발생하였다. 이후, 이 nice와 recent_cpu는 짧은 시간마다 계속 갱신되는 것이기 때문에, 위와 같은 상황이 발생할 수 있다고 생각하였고 자고 있는 thread를 깨우기 직전에 sorting을 진행하여 그 sorted된 값으로 scheduling이 이루어져도 무방하고, thread들은 점유하고 있어야 할 시간만큼 점유할 수 있을 것이라 생각했다. 그에 따라, thread_wakeup함수에 list_sort(&ready_list,thread_comparepriority,NULL)을 추가하였고 의미있는 결과를 얻었다. 이전에는 thread가 점유하는 tick이 714, 709에서만 번갈아 나오다가, 690대까지 점유하는 결과를 얻었다.
+> //하지만, 매 실행마다 결과가 크게 3가지로 나누어지는 것을 볼 수 있었고, 문제는 완전히 해결되지 않았다.
+문제가 해결되지 않아 PintOS 공식 문서의 FAQ부분을 읽어본 결과, TEST가 통과하지 않는다면 Timer Interrupt Handler 쪽을 살펴보라는 조언을 얻었다.
+    
+    ```cpp
+    static void timer_interrupt (struct intr_frame *args UNUSED)
+    {
+        ticks++; //Since OS booting.
+        thread_tick ();
+
+        if(!thread_mlfqs){
+            thread_wakeup(ticks);//OS BOOT이후 TICKS와 비교
+        } else 
+        {
+            mlfqs_inc_recent_cpu();
+            if(!(ticks % TIMER_SLICE)){
+                mlfqs_priority();
+            if(!(ticks % TIMER_FREQ)){
+                mlfqs_recent_cpu();
+                mlfqs_load_avg();
+            }
+        }
+        thread_wakeup(ticks);
+        }
+    }   
+    ```
+
+> 위 코드가 수정 전의 timer interrupt method이다. Recent_cpu와 load_avg의 call 순서를 보면 막연히 공식 문서에 나온 순서대로 call을 한 것을 볼 수 있다. 그렇지만, priority와 recent_cpu라는 본질을 생각해보면, priority를 계산하기 위해 recent_cpu, load_avg, nice 모두 계산되어야 본래 원하는 목적을 달성할 수 있는데 각 함수를 보면 load_avg를 먼저 call하여 계산을 진행하고 recent_cpu를 호출해야 올바르다고 할 수 있다. 그 이유는 recent_cpu에 priority를 계산하는 code가 있도록 구현했기 때문이다. 이에 따라 다음과 같이 코드를 수정하였다. 그 결과 문제가 모두 해결되었다.
+
+    ```cpp
+     if(!(ticks % TIMER_FREQ)){
+                mlfqs_load_avg();  
+                mlfqs_recent_cpu();          
+            }
+    ```
+
+## 2. Prioirty vs. Origin_Priority Issue on Priority Donation
+> Priority donation을 구현 할 때 처음 작성시에는 set priority부분에서 priority에 새로운 값을 대입하였다. 구현하고자 하는 방향에는 origin_priority와 priority를 구분하였는데, priority를 reset하거나 set할 때 priority에 대입을 하다보니 priority donation 중에 일어난 priority와 값이 구분되지 않아 본래의 priority로 돌아가고자 할 때 문제가 생기는 현상이 발생하였다. 이에 대한 해결 방법으로, set 또는 reset 하는 priority는 origin_priority에 대입하고, 그 외 priority donation 등 좀더 포괄적으로 많은 기능을 수행하는 priority는 priority 변수에 대입하였다. 그 결과 문제는 해결되었다.
 
 <br>
 
