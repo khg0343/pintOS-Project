@@ -2,5 +2,6 @@
     "files.associations": {
         "istream": "c",
         "ostream": "c"
-    }
+    },
+    "cmake.configureOnOpen": true
 }
