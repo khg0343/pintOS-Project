@@ -838,7 +838,7 @@ static void timer_interrupt (struct intr_frame *args UNUSED)
 }   
 ```
 
-> 위 코드가 수정 전의 timer interrupt method이다. Recent_cpu와 load_avg의 call 순서를 보면 막연히 공식 문서에 나온 순서대로 call을 한 것을 볼 수 있다. 그렇지만, priority와 recent_cpu라는 본질을 생각해보면, priority를 계산하기 위해 recent_cpu, load_avg, nice 모두 계산되어야 본래 원하는 목적을 달성할 수 있는데 각 함수를 보면 load_avg를 먼저 call하여 계산을 진행하고 recent_cpu를 호출해야 올바르다고 할 수 있다. 그 이유는 recent_cpu에 priority를 계산하는 code가 있도록 구현했기 때문이다. 이에 따라 다음과 같이 코드를 수정하였다. 그 결과 문제가 모두 해결되었다.
+> 위 코드가 수정 전의 timer interrupt method이다. Recent_cpu와 load_avg의 call 순서를 보면 막연히 공식 문서에 나온 순서대로 call을 한 것을 볼 수 있다. 그렇지만, 각각의 값에 대한 계산식을 생각해보면 load_avg를 먼저 call하여 계산을 진행하고 recent_cpu를 호출해야 올바르다고 할 수 있다. 그 이유는 recent_cpu의 계산값이 load_avg에 영향을 받기 때문이다. 반면, load_avg는 그렇지 않다. 이에 따라 다음과 같이 코드를 수정하였다. 그 결과 문제가 모두 해결되었다.
 
 ```cpp
 if(!(ticks % TIMER_FREQ)){
