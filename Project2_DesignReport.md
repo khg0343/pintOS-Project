@@ -447,7 +447,7 @@ Process Name은 process_execute(const char *file_name)에서 시작된다.
 ## **Brief Algorithm**
 System call : void exit(int status)에서 message를 출력한다. message에 담길 정보 중 process name은 thread structure에서 받아오는 method 하나를 구현하고 exit code는 exit에 넘겨준 status를 사용한다. 이때, 주의할 점으로는 kernel thread가 종료되거나 halt가 발생한 경우에는 process가 종료된 것이 아니므로 위 메세지를 출력하지 않아야 하는데 이 경우는 애초에 다른 exit()을 호출하지 않기 때문에 해결 된 issue이다.
 
-## **To be Added / Modified**
+## **To be Added & Modified**
 - void exit(int status)
   > Termination message를 출력하는 code를 추가한다.
 
@@ -521,10 +521,10 @@ Process를 시작하는 함수인 start_process()를 보자.
 > load를 보면 filesys_open이라는 method가 있는데, method 설명을 보면 실행하고자 하는 프로그램의 이름을 가지고 실행가능한 파일을 실행한다. 즉, 이 method에서 넘겨주는 것은 명령어 중 가장 처음 부분임을 알 수 있다. 그에 따라, file_name을 넘기는 것이 아니라 file_name을 token으로 구분해 가장 처음 부분을 넘겨주어야 할 것이다. 그 다음에는 setup_stack을 보자. setup_stack은 간단하다. stack을 setting 해주는 것인데, 설명을 보면 0~esp의 크기의 stack을 setting 해준다. esp는 현재 가리키고 있는 stack pointer이며 이는 setup_stack에서 PHYS_BASE인 default 값으로 설정된다. 이 stack에 argument들을 넣어서 esp를 이용하여 함수들이 필요한 인자를 사용하게 구현하면 될 것이다. pintOS 문서를 참고하면, 이 stack은 위에서 아래로 자라는 것을 알 수 있다. 따라서, arguments을 stack에 넣을 때 esp를 줄여가면서 넣으면 될 것이다. 넣는 순서, 사이즈 등은 아래 사진을 참고하여 같은 방향으로 구현하고자 한다.
 
 ![figure_1](https://github.com/khg0343/pintOS-Project/blob/master/Figure_1.PNG)
-## **Solution & Brief Algorithm**
+## **Solution**
 process_execute에서 시작하여 file_name 중 첫 token을 thread_create의 첫번째 인자로 넘겨준다. file_name 전체를 start_process에 넘기고 load를 call한다. load에서도 마찬가지로 file_name의 첫 token을 file에 넣어주고 나머지 arguments들은 stack이 setup 되고 나서 별도의 method에서 stack에 넣는다.
 
-## **To be added & modifed**
+## **To be Added & Modified**
 - tid_t process_execute(const char *file_name)
   > thread structure의 member인 name에 넣는 부분을 수정한다.
  
@@ -619,15 +619,15 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
 
     File Descriptor를 통해 file을 close하는 함수. 관련된 file descriptor의 상태도 변경해주어야한다.
 
-## **To be Added / Modified**
+## **To be Added & Modified**
 
 - struct thread
   > 1. fd에 대한 file table로의 pointer를 저장하는 이중포인터 (struct file** file_descriptor_table) </br>
   > 2. 자식 프로세스의 list (struct list child_list) </br> 
-  >  3. 위 list를 관리하기 위한 element (struct list_elem child_elem) </br> 
-  >  4. exec()에서 사용되는 semaphore (struct semaphore sema_child) </br> 
-  >  5. wait()에서 사용되는 semaphore (struct semaphore sema_wait) </br>
-  >  6. thread의 status를 저장하는 변수 (int status)
+  > 3. 위 list를 관리하기 위한 element (struct list_elem child_elem) </br> 
+  > 4. exec()에서 사용되는 semaphore (struct semaphore sema_child) </br> 
+  > 5. wait()에서 사용되는 semaphore (struct semaphore sema_wait) </br>
+  > 6. thread의 status를 저장하는 변수 (int status)
 
 - userprog/syscall.c
   > file에 접근해 있는 동안 다른 thread가 접근하지 못하도록 lock하기 위한 변수를 추가한다. (struct lock file_lock)
@@ -662,15 +662,9 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
 # **V. Denying Writes to Executables**
 
 ## **Analysis**
-> 해당 문제는 수업시간에 진행한 Reader-Writer Problem(CSED312 Lecture Note 4: Synchronization 2; p.33~34)과 같은 맥락이다. 실행중인 파일에서 Writer가 파일을 변경한다면 예상치 못한 결과를 얻을 수 있다. Mutex를 직접 구현하여 과제를 수행하려 했으나 pintOS에 내제되어 있는 유용한 method가 있어 이를 이용하여 구현하고자 한다. 아래는 해당 method이다.
+해당 문제는 수업시간에 진행한 Reader-Writer Problem(CSED312 Lecture Note 4: Synchronization 2; p.33~34)과 같은 맥락이다. 실행중인 파일에서 Writer가 파일을 변경한다면 예상치 못한 결과를 얻을 수 있다. Mutex를 직접 구현하여 과제를 수행하려 했으나 pintOS에 내제되어 있는 유용한 method가 있어 이를 이용하여 구현하고자 한다.
 
   ```cpp
-  struct file 
-  {
-    struct inode *inode;        /* File's inode. */
-    off_t pos;                  /* Current position. */
-    bool deny_write;            /* Has file_deny_write() been called? */
-  };
   /* Prevents write operations on FILE's underlying inode
    until file_allow_write() is called or FILE is closed. */
   void file_deny_write (struct file *file) 
@@ -699,11 +693,11 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
 > 위 method의 주석을 보면, file_deny_write는 말 그대로 write를 거부하는 method이다. File struct에 deny_write라는 boolean value가 있는데, file_deny_write가 call 되었다면 해당 값을 true로 assign하고, file_allow_write를 call하면 해당 값이 false로 assign된다. 즉, 이를 이용하여 일종의 Mutex를 실현하고 잇는 것이다. 그렇다면 이 method를 call해야 할 때는 언제인지 알아보자. File write를 막아야 할 때는 이미 load를 하였을 때이다. 따라서 load에서 file을 open하고 나서 file_deny_write()를 호출한다. 이후, file이 close 될 때 이를 풀어주기 위해 file_allow_write를 호출해준다.
 
 ## **Solution**
-> File이 open되는 지점인 load 함수에서 file_deny_write()를 호출하고, file이 close 될 때 file_allow_write를 호출해 다시 권한을 넘긴다.
+File이 open되는 지점인 load 함수에서 file_deny_write()를 호출하고, file이 close 될 때 file_allow_write를 호출해 다시 권한을 넘긴다.
 
-## **To be Added & Modified
+## **To be Added & Modified**
 - bool load (const char *file_name, void (**eip) (void), void **esp)
-> file이 open 후 시점에 file_deny_write를 호출한다.
+  > file이 open 후 시점에 file_deny_write를 호출한다.
 - file_allow_write는 이미 file_close안에 구현되어 있다.
 
   ```cpp
