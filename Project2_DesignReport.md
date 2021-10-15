@@ -458,12 +458,76 @@ thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 
 # **III. Argument Passing**
 
 ## **Analysis**
+> Project 1을 구현 할 때, Linux Shell에서 "pintos -q run alarm-single"과 같은 명령어로 프로그램을 실행시킨다. 이처럼 프로그램을 실행시키는데에는 직접적인 프로그램명도 있지만 부수적으로 붙는 옵션들이 존재한다. 이것들을 Argument라 칭하고, 이를 실행시키기 위해 처리하는 과정을 Argument Passing이라 한다. Linux에 Argument Passing이 구현되어 있듯이, PintOS에도 이 기능이 필요하고 이를 구현하고자 한다. 그렇다면, 위 예시의 명령어에서 "pintos"는 위의 Process Name이 될 것이고, 뒤에 붙은 것들은 option들이 될 것이다. Process Name을 넘겨주는 부분은 process_execute()임을 알고 있으니 이 method의 코드를 살펴보도록 하자.
 
-Add codes to support argument passing for the function process_execute(). Instead of taking a program file name as its only argument, process_execute() should split words using spaces and identify program name and its arguments separately. For instance, process_execute(“grep foo bar”) shoud run grep with two arguments foo and bar.
+  ```cpp
+  tid_t process_execute (const char *file_name) 
+  {
+    char *fn_copy;
+    tid_t tid;
 
-## **Solution**
+    /* Make a copy of FILE_NAME.
+     Otherwise there's a race between the caller and load(). */
+    fn_copy = palloc_get_page (0);
+    if (fn_copy == NULL)
+      return TID_ERROR;
+    strlcpy (fn_copy, file_name, PGSIZE);
 
-Add codes to support argument passing for the function process_execute(). Instead of taking a program file name as its only argument, process_execute() should split words using spaces and identify program name and its arguments separately. For instance, process_execute(“grep foo bar”) shoud run grep with two arguments foo and bar.
+    /* Create a new thread to execute FILE_NAME. */
+    tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+    if (tid == TID_ERROR)
+      palloc_free_page (fn_copy); 
+    return tid;
+}
+  ```
+> 위 method에서는 file_name을 전체를 넘기는 부분은 존재하지만, file_name을 token으로 자르는 부분은 존재하지 않는다. 이것을 통해 유추할 수 있듯이, 현재 pintOS에는 argument passing이 구현되어 있지 않다. 이는 pintOS 공식 문서에서도 확인 할 수 있다. 추가적으로, 이는 Process termination message를 구현할 때도 영향을 미치므로 전체적인 구현 순서를 고려할 필요가 있다.
+> 다시한번 "pintos -q run alarm-single"을 예로 들면, [pintos, -q, run, alarm-single]과 같이 구분되어 pintos는 thread_create의 file_name에 넣어 넘겨주는 것이 합리적일 것이다. Argument들은 처리가 안되었는데, thread_create()의 4번째 인자를 보면 fn_copy이다. 이는 file_name, 즉 전체 명령어를 의미하고, start_process()의 인자가 될 것이므로 start_process에 넘어가는 file_name은 전체 명령어이다. 전체 명령어른 넘겼으므로 이후에 인자들을 처리 할 가능성이 생겼다. start_process를 보자.
+
+  ```cpp
+  static void start_process (void *file_name_)
+  {
+    char *file_name = file_name_;
+    ...
+    success = load (file_name, &if_.eip, &if_.esp);
+
+    /* If load failed, quit. */
+    palloc_free_page (file_name);
+    if (!success) 
+    thread_exit ();
+    ...
+  ```
+> 위 method를 보면 load에서도 전체 명령어를 넘긴다. 밑에 if(!success) 코드를 보았을 때, load가 넘겨주는 값이 0이면 thread_exit을 call하는 것과 주석을 보아 load에서 0이 아닌 값을 return하면 load가 성공, 즉 실행이 성공되었다는 것을 유추할 수 있다. 더불어, load에서 argument들을 처리할 것이라는 것을 예측할 수 있다. 
+
+  ```cpp
+  bool load (const char *file_name, void (**eip) (void), void **esp) 
+  {
+    ...
+    file = filesys_open (file_name);
+    ...
+    /* Set up stack. */
+    if (!setup_stack (esp))
+      goto done;
+
+    /* Start address. */
+    *eip = (void (*) (void)) ehdr.e_entry;
+    ...
+  }
+  ```
+> load를 보면 filesys_open이라는 method가 있는데, method 설명을 보면 실행하고자 하는 프로그램의 이름을 가지고 실행가능한 파일을 실행한다. 즉, 이 method에서 넘겨주는 것은 명령어 중 가장 처음 부분임을 알 수 있다. 그에 따라, file_name을 넘기는 것이 아니라 file_name을 token으로 구분해 가장 처음 부분을 넘겨주어야 할 것이다. 그 다음에는 setup_stack을 보자. setup_stack은 간단하다. stack을 setting 해주는 것인데, 설명을 보면 0~esp의 크기의 stack을 setting 해준다. esp는 현재 가리키고 있는 stack pointer이며 이는 setup_stack에서 PHYS_BASE인 default 값으로 설정된다. 이 stack에 argument들을 넣어서 esp를 이용하여 함수들이 필요한 인자를 사용하게 구현하면 될 것이다. pintOS 문서를 참고하면, 이 stack은 위에서 아래로 자라는 것을 알 수 있다. 따라서, arguments을 stack에 넣을 때 esp를 줄여가면서 넣으면 될 것이다. 넣는 순서, 사이즈 등은 아래 사진을 참고하여 같은 방향으로 구현하고자 한다.
+
+![figure_1](https://github.com/khg0343/pintOS-Project/blob/master/Figure_1.PNG)
+## **Solution & Brief Algorithm**
+> process_execute에서 시작하여 file_name 중 첫 token을 thread_create의 첫번째 인자로 넘겨준다. file_name 전체를 start_process에 넘기고 load를 call한다. load에서도 마찬가지로 file_name의 첫 token을 file에 넣어주고 나머지 arguments들은 stack이 setup 되고 나서 별도의 method에서 stack에 넣는다.
+
+## **To be added & modifed**
+- tid_t process_execute(const char *file_name)
+> thread structure의 member인 name에 넣는 부분을 수정한다.
+ 
+- bool load(const char *file_name, void (**eip) (void), void **esp)
+> filesys_open에서 넘겨주는 인자를 수정하고, setup_stack 이후에 stack에 arguments를 넣는 method를 추가한다.
+
+-void putArguments(char* file_name, void **esp)
+> 위에서 언급한 setup_stack 이후 넣는 추가 method이다. file_name을 넘겨 받아 arguments의 개수, 값, 주소를 파악하여 esp를 조정하면서 넣어야 하는 값을 stack에 넣어준다.
 
 </br>
 
