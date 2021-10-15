@@ -38,21 +38,27 @@
 ## **Solution**
 
 >User Program이 종료되면, 종료된 Process의 Name과 어떠한 system call로 종료 되었는지에 대한 exit code를 출력한다. 출력 형식은 다음과 같다
-
+  
+  ```cpp
   printf("%s: exit(%d\n)",variable_1, variable_2)
+  ```
 
 >위 형식에서 variable_1은 Process의 Name이고, variable_2는 exit code 이다. 위는 Prototype으로 변수가 지정될 수 도 있고 directly하게 function을 call할 수도 있다. 각 요소를 어떻게 불러올지에 대해 알아보자.
 ### 1. Process Name
 >Process Name은 process_execute(const char *file_name)에서 시작된다. 
 
+  ```cpp
   /*userprog/process.c*/
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  ```
 
 >process_execute에서 보면 *file_name을 parameter로 넘겨 받는다. 이를 thread를 생성할 때 argument로 넘기는데, thread structure에서 char name이라는 변수에 process Name을 저장한다. 즉, Process Name을 얻으려면 해당 thread에서 name을 얻어오는 method를 작성하면 된다.
 ### 2. Exit Code
 > PintOS Document에서 구현해야 할 System call 중 exit을 보면 선언이 다음과 같이 되어 있다.
 
+  ```cpp
   void exit(int status)
+  ```
 
 > Parameter인 status가 exit code이므로 exit안에서 exit code를 직접적으로 다룰 수 있다. 또한, thread.c의 thread_exit을 보면 thread_exit에서 process_exit을 call하는 것을 보아 종료 method call 순서는 thread_exit -> process_exit임을 알 수 있다. thread_exit은 system call : exit을 받으면 이 과정 중에서 실행 될 것이므로, exit method에서 위 형식의 message를 출력하는 것이 용이할 것이다. 위 Solution에 따라 구현하고자 하는 Brief Algorithm은 아래와 같다.
 
