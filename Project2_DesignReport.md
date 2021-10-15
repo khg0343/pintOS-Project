@@ -704,7 +704,7 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
 ## **To be Added & Modified
 - bool load (const char *file_name, void (**eip) (void), void **esp)
 > file이 open 후 시점에 file_deny_write를 호출한다.
-- ※file_allow_write는 이미 file_close안에 구현되어 있다.
+- file_allow_write는 이미 file_close안에 구현되어 있다.
 
   ```cpp
   void file_close (struct file *file) 
