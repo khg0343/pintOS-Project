@@ -404,9 +404,10 @@ filesys_remove (const char *name)
 
 User Program이 File System로부터 load되거나, System Call이 실행됨에 따라 file system에 대한 code가 필요하다. 하지만, 이번 과제의 초점은 file system을 구현하는 것이 아니기 때문에 이미 구현되어있는 pintOS의 file system의 구조를 파악하고 적절히 사용할 수 있도록 하여야 한다. pintOS 문서에 따르면 filesys에 해당하는 코드는 수정하지 않는 것을 권장하고 있으므로, 구현에 있어 주의하도록 한다.
 
+
 그렇다면 각 thread가 이러한 file들에 어떻게 접근하고 사용하는 것은 어떻게 이루어질까?
-이때 File Descriptor라는 개념이 사용된다. File Descriptor(fd)란 thread가 file을 다룰 때 사용하는 것으로, thread가 특정 file에 접근할 때 사용하는 추상적인 값이다. fd는 일반적으로 0이 아닌 정수값을 가지며 int형으로 선언한다. 
-thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 fd값을 할당한다. 이때, fd 0, 1, 2는 각각 stdin, stdout, stderr에 기본적으로 indexing되어있으므로 3부터 할당할 수 있다.
+이때 File Descriptor라는 개념이 사용된다. File Descriptor(fd)란 thread가 file을 다룰 때 사용하는 것으로, thread가 특정 file에 접근할 때 사용하는 추상적인 값이다. fd는 일반적으로 0이 아닌 정수값을 가지며 int형으로 선언된다. 
+thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 fd값을 할당한다. 이때, fd 0, 1은 각각 stdin, stdout에 기본적으로 indexing되어있으므로 2부터 할당할 수 있다.
 그 다음 thread가 open된 파일에 System Call로 접근하게 되면, fd값을 통해 file을 지칭할 수 있다.
 각각의 thread에는 file descriptor table이 존재하며 각 fd에 대한 file table로의 pointer를 저장하고 있다. 이 pointer를 이용하여 file에 접근할 수 있게 되는 것이다.
 
@@ -417,7 +418,7 @@ thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 
 # **II. Process Termination Messages**
 ## **Solution**
 
->User Program이 종료되면, 종료된 Process의 Name과 어떠한 system call로 종료 되었는지에 대한 exit code를 출력한다. 출력 형식은 다음과 같다
+User Program이 종료되면, 종료된 Process의 Name과 어떠한 system call로 종료 되었는지에 대한 exit code를 출력한다. 출력 형식은 다음과 같다
   
   ```cpp
   printf("%s: exit(%d\n)",variable_1, variable_2)
@@ -425,7 +426,7 @@ thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 
 
 >위 형식에서 variable_1은 Process의 Name이고, variable_2는 exit code 이다. 위는 Prototype으로 변수가 지정될 수 도 있고 directly하게 function을 call할 수도 있다. 각 요소를 어떻게 불러올지에 대해 알아보자.
 ### 1. Process Name
->Process Name은 process_execute(const char *file_name)에서 시작된다. 
+Process Name은 process_execute(const char *file_name)에서 시작된다. 
 
   ```cpp
   /*userprog/process.c*/
@@ -433,30 +434,30 @@ thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 
   ```
 
 >process_execute에서 보면 *file_name을 parameter로 넘겨 받는다. 이를 thread를 생성할 때 argument로 넘기는데, thread structure에서 char name이라는 변수에 process Name을 저장한다. 즉, Process Name을 얻으려면 해당 thread에서 name을 얻어오는 method를 작성하면 된다.
+
 ### 2. Exit Code
-> PintOS Document에서 구현해야 할 System call 중 exit을 보면 선언이 다음과 같이 되어 있다.
+ PintOS Document에서 구현해야 할 System call 중 exit을 보면 선언이 다음과 같이 되어 있다.
 
   ```cpp
   void exit(int status)
   ```
 
-> Parameter인 status가 exit code이므로 exit안에서 exit code를 직접적으로 다룰 수 있다. 또한, thread.c의 thread_exit을 보면 thread_exit에서 process_exit을 call하는 것을 보아 종료 method call 순서는 thread_exit -> process_exit임을 알 수 있다. thread_exit은 system call : exit을 받으면 이 과정 중에서 실행 될 것이므로, exit method에서 위 형식의 message를 출력하는 것이 용이할 것이다. 위 Solution에 따라 구현하고자 하는 Brief Algorithm은 아래와 같다.
+> Parameter인 status가 exit code이므로 exit안에서 exit code를 직접적으로 다룰 수 있다. 또한, thread.c의 thread_exit을 보면 thread_exit에서 process_exit을 call하는 것을 보아 종료 method call 순서는 thread_exit -> process_exit임을 알 수 있다. thread_exit은 system call : exit을 받으면 이 과정 중에서 실행 될 것이므로, exit method에서 위 형식의 message를 출력하는 것이 용이할 것이다.
 
 ## **Brief Algorithm**
->System call : void exit(int status)에서 message를 출력한다. message에 담길 정보 중 process name은 thread structure에서 받아오는 method 하나를 구현하고 exit code는 exit에 넘겨준 status를 사용한다. 이때, 주의할 점으로는 kernel thread가 종료되거나 halt가 발생한 경우에는 process가 종료된 것이 아니므로 위 메세지를 출력하지 않아야 하는데 이 경우는 애초에 다른 exit()을 호출하지 않기 때문에 해결 된 issue이다.
+System call : void exit(int status)에서 message를 출력한다. message에 담길 정보 중 process name은 thread structure에서 받아오는 method 하나를 구현하고 exit code는 exit에 넘겨준 status를 사용한다. 이때, 주의할 점으로는 kernel thread가 종료되거나 halt가 발생한 경우에는 process가 종료된 것이 아니므로 위 메세지를 출력하지 않아야 하는데 이 경우는 애초에 다른 exit()을 호출하지 않기 때문에 해결 된 issue이다.
 
 ## **To be Added / Modified**
 - void exit(int status)
-> Termination message를 출력하는 code를 추가한다.
+  > Termination message를 출력하는 code를 추가한다.
 
 - char* get_ProcessName(struct thread* cur)
-> 종료되는 thread의 Name을 받아오는 method를 추가한다.
+  > 종료되는 thread의 Name을 받아오는 method를 추가한다.
 
 
 </br>
 
 # **III. Argument Passing**
-
 ## **Analysis**
 > Project 1을 구현 할 때, Linux Shell에서 "pintos -q run alarm-single"과 같은 명령어로 프로그램을 실행시킨다. 이처럼 프로그램을 실행시키는데에는 직접적인 프로그램명도 있지만 부수적으로 붙는 옵션들이 존재한다. 이것들을 Argument라 칭하고, 이를 실행시키기 위해 처리하는 과정을 Argument Passing이라 한다. Linux에 Argument Passing이 구현되어 있듯이, PintOS에도 이 기능이 필요하고 이를 구현하고자 한다. 그렇다면, 위 예시의 명령어에서 "pintos"는 위의 Process Name이 될 것이고, 뒤에 붙은 것들은 option들이 될 것이다. Process Name을 넘겨주는 부분은 process_execute()임을 알고 있으니 이 method의 코드를 살펴보도록 하자.
 
@@ -534,59 +535,138 @@ thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 
 # **IV. System Call**
 
 ## **Analysis**
-Implement the system call handler in “userprog/syscall.c”. Current handler will terminate the process if system call is called. It should retrieve the system call number and system call arguments after the system call is handled.
+
+I에서 분석한 System Call Procedure에서 언급했듯, system call을 수행할 수 있도록 그 handler를 구현하여야한다. syscall macro를 통해 user stack에 push된 system call argument들에 대한 정보를 통해 system call을 수행한다. 이때 stack에 입력된 정보들을 읽기 위해 stack pointer를 통해 argument를 pop하고, 해당 system call number에 대한 기능을 수행하는 과정을 구현하여야한다.
 
 ## **Solution**
 
-  Implement the following system calls:
+system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argument를 pop하는 함수(pop_arg_stack())를 구현하여야한다. 또한, esp주소가 valid한지 확인하기 위한 함수(is_addr_valid())를 구현하여야한다. 마지막으로, 가장 중요한 system call에 해당하는 기능에 대한 구현이 이루어져야한다.
 
-**1. void halt(void)** </br>
-    Terminates Pintos by calling shutdown_power_off()
+### **Implement the following system calls**
+
+**1. void halt(void)**
+
+    shutdown_power_off() 함수를 호출하여 PintOS를 종료하는 함수.
 
 **2. void exit(int status)**
-    Terminates the current user program and return status to the kernel. Ther kernel passes the status to the parent process.
     
-**3. pid_t exec(const char *cmd_line)**
-Runs the program whose name is given in cmd_line and returns the new process’s pid. If its fails to execute the new program, it should return -1 as pid. Synchronization should be ensured for this system call.
+    현재 실행중인 user program을 종료하고, 해당 status를 kernel에 return하는 함수.
+    current thread를 종료하고, parent process에 해당 status를 전달한다.
+    
+**3. pid_t exec(const char * cmd_line)**
+    
+    cmd_line에 해당하는 이름의 program을 실행하는 함수.
+    program 실행을 위해 thread_create를 통해 child process생성하고 자식과 부모와의 관계를 thread 구조체에 저장해둔다. 만약 program 실행을 실패할 경우 -1를 return하고, 성공할 경우에는 새로 생성된 process의 pid를 return한다. 이 system call에 대해 synchronization이 보장되어야한다. 이를 위해 child process에 대한 semaphore생성이 필요하다.
 
 **4. int wait (pid_t pid)**
-Waits for the child process given as pid to terminate and retrieves the exit status. It is possible for the parent process to wait for a child process that has already been terminated. The kernel should retrieve the child’s exit status and pass it to the parent anyway. If the child process has been terminated by the kernel, return status must be -1.
-Wait must fail and return -1 immediately if any of the following conditions is true:
-- Pid does not refer to a direct child of the calling process. That is, if A spawns child B and B spawns child C, A cannot wait for C.
-- The process already called wait for the pid in the past. That is, the process can wait for a pid only once.
-Processes may spawn any number of children. Your design should consider all the possible situation that can happen between parent and the child process.
-Implementing this system call requires considerably more work than any of the rest.
 
-**5. bool create(const char *file, unsigned initial_size)**
-Creates a new file with the name file and initialize its size with initial_size. Return true if successful, false otherwise.
+    pid값을 가진 child process가 종료될 때까지 기다리는 함수.
+    thread에 저장된 child_list에서 pid와 동일한 child thread를 찾고, 해당 thread가 종료될 때까지 wait한다.
+    이 system call에 대해 synchronization이 보장되어야한다. 이를 위해 wait process에 대한 semaphore생성이 필요하다.
+    wait에 성공하였을 경우 child_list에서 해당 thread를 삭제하고, exit status를 return한다.
+    반면, 아래와 같이 wait에 실패하거나, 올바르지 않은 호출일 경우 -1을 return한다.
+    - 이미 종료된 child를 parent가 기다리게 되는 경우
+    - pid가 direct child가 아닐 경우 (즉, 자신이 spawn한 child가 아닐 경우)
+    - 이미 해당 pid에 대해 과거에 wait를 호출하여 기다리고 있을 경우 
 
-**6. bool remove(const char *file)**
-Deletes the file called file. Returns true if successful, false otherwise. A file may be removed whether it is open or closed. However, removing an open file does not close it.
+**5. bool create(const char * file, unsigned initial_size)**
 
-**7. int open(const char *file)**
-open the file with name file. Returns a nonnegative integer number for the file descriptor, or -1 if unsuccessful.
-File descriptors number 0 and 1 are reserved for the console, STDIN_FILENO, STDOU”T_FILENO, respectively. These numbers should not be used.
-Each process has an independent set of file descriptors and file descriptors are not inherited to child processes.
+    파일명이 file인 file을 새로 만드는 함수. 해당 file의 size는 initial_size로 initialize해준다. 성공시 true를, 실패시 false를 return한다.
+
+**6. bool remove(const char * file)**
+
+    파일명이 file인 file을 삭제하는 함수. 파일의 open/close 여부에 관계없이 삭제 가능하며, open된 파일을 삭제할 경우 다시 close할 수 없다. 성공시 true를, 실패시 false를 return한다.
+
+**7. int open(const char * file)**
+
+    파일명이 file인 file을 open하고, file descriptor가 file을 가리키게 하는 함수.
+    성공할 경우 file descriptor값을 return하고, 실패시 -1를 return한다.
+    앞에서 언급하였듯, file descriptor의 0과 1은 stdin, stdout으로 indexing 되어있으므로 2부터 사용하지 않은 가장 작은 숫자를 할당하도록 한다. 
 
 **8. int filesize(int fd)**
-Returns the size of opened file with fd.
 
-**9. int read(int fd, void *buffer, unsigned size)**
-Reads size bytes from the opend file and save the contents into buffer. Returns the number of bytes that are acutally read. -1 should be returned if the system fails to read. If 0 is given as fd, it should read from the keyboard using input_getc()
+    File Descriptor를 통해 open된 file의 size를 return하는 함수.
 
-**10. int write(int fd, const void *buffer, unsigned size)**
-Writes size bytes from buffer to the open file fd. Returns the number of bytes actually written.
-Since the basic file system for this project does not support file growth, you should not write past the end-of-file.
-If 1 is given as the fd, it should write to the console. You should use putbuf() to write things in the buffer to the console.
+**9. int read(int fd, void * buffer, unsigned size)**
+
+    Open된 file의 file descriptor에서 size byte만큼 읽고 buffer에 내용을 저장하는 함수.
+    fd로 0이 주어질 경우, stdin을 의미하며 이는 keyboard input을 통해 입력받아야한다. 따라서 input_getc() 함수를 이용해 입력된 내용을 buffer에 저장하고 입력된 byte를 return한다.
+    fd가 0이 아닐 경우, 해당 file descriptor에 해당하는 file을 file_read함수를 통해 읽고 그 읽은 byte를 return한다.
+    읽기에 성공하였을 경우 read한 byte를 return하지만, 실패하였을 경우 -1을 return한다.
+    파일을 읽는 동안 다른 thread가 파일에 접근하지 못하도록 file_lock을 acquire하고, 작업이 끝나면 release한다.
+
+**10. int write(int fd, const void * buffer, unsigned size)**
+
+    Open된 file의 file descriptor에서 buffer에 내용을 size byte만큼 쓰는 함수.
+    fd로 1이 주어질 경우, stdout을 의미하며 이는 console output을 통해 출력하여야한다. 따라서 putbuf() 함수를 이용해 buffer에 저장된 내용을 console에 입력하고 입력된 byte를 return한다.
+    fd가 1이 아닐 경우, 해당 file descriptor에 해당하는 file에 file_write함수를 통해 쓰고 그 쓴 byte를 return한다.
+    쓰기에 성공하였을 경우 write byte를 return하지만, 실패하였을 경우 -1을 return한다.  
+    파일을 쓰는 동안 다른 thread가 파일에 접근하지 못하도록 file_lock을 acquire하고, 작업이 끝나면 release한다.
 
 **11. void seek (int fd, unsigned position)**
-Changes the next bytes to be read or written in open file fd to position.
+  
+    Open된 file의 file descriptor에서 읽거나 쓸 다음 byte를 position만큼 이동시키는 함수.
 
 **12. unsigned tell (int fd)**
-Returns the position of the next byte to be read or written in open file fd.
+
+    Open된 file의 file descriptor에서 읽거나 쓸 다음 byte의 position을 return하는 함수.
 
 **13. void close (int fd)**
-Closes the file with fd. You should also close all of its open file descriptors as well.
+
+    File Descriptor를 통해 file을 close하는 함수. 관련된 file descriptor의 상태도 변경해주어야한다.
+
+## **To be Added / Modified**
+
+- thread structure에 필요한 변수 추가 및 초기화
+```cpp
+struct thread {
+  ...
+  struct file** file_descriptor_table //fd에 대한 file table로의 pointer를 저장
+  struct list child_list // 자식 프로세스의 list
+  struct list_elem child_elem // 위 list를 관리하기 위한 element
+  struct semaphore sema_child // exec()에서 사용되는 semaphore
+  struct semaphore sema_wait // wait()에서 사용되는 semaphore 
+  int status // thread의 status를 저장
+  ...
+}
+```
+
+- file에 접근해 있는 동안 다른 thread가 접근하지 못하도록 lock하기 위한 변수 추가.
+```cpp
+/*userprog/syscall.c*/
+struct lock file_lock
+```
+
+- stack에서 argument를 pop하는 함수 추가
+```cpp
+//stack pointer(sp)로부터 cnt만큼의 argument를 stack에서 pop하여 *arg에 저장
+void pop_arg_stack(int *arg, void* sp, int cnt)
+```
+
+- 입력된 주소값이 user memory에 해당하는 valid한 함수인지 확인하는 함수
+```cpp
+bool is_addr_valid(void* addr)
+```
+
+- system call handler 함수 수정
+```cpp
+/*userprog/syscall.c*/
+static void
+syscall_handler (struct intr_frame *f UNUSED) 
+{
+    if(is_addr_valid(f->esp)) {
+      switch (*(int*)f->esp) {
+        case SYS_HALT : sys_halt(); break;
+        case SYS_EXIT : pop_arg_stack(); sys_exit((int)argv[0]); break;
+        .
+        .
+        case SYS_CLOSE : ...
+        default : sys_exit(-1); //invalid syscall number
+      }
+    } else sys_exit(-1);
+}
+```
+
 
 # **V. Denying Writes to Executables**
 
