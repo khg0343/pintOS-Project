@@ -459,7 +459,9 @@ System call : void exit(int status)에서 message를 출력한다. message에 �
 
 # **III. Argument Passing**
 ## **Analysis**
-> Project 1을 구현 할 때, Linux Shell에서 "pintos -q run alarm-single"과 같은 명령어로 프로그램을 실행시킨다. 이처럼 프로그램을 실행시키는데에는 직접적인 프로그램명도 있지만 부수적으로 붙는 옵션들이 존재한다. 이것들을 Argument라 칭하고, 이를 실행시키기 위해 처리하는 과정을 Argument Passing이라 한다. Linux에 Argument Passing이 구현되어 있듯이, PintOS에도 이 기능이 필요하고 이를 구현하고자 한다. 그렇다면, 위 예시의 명령어에서 "pintos"는 위의 Process Name이 될 것이고, 뒤에 붙은 것들은 option들이 될 것이다. Process Name을 넘겨주는 부분은 process_execute()임을 알고 있으니 이 method의 코드를 살펴보도록 하자.
+Project 1을 구현 할 때, Linux Shell에서 "pintos -q run alarm-single"과 같은 명령어로 프로그램을 실행시킨다. 이처럼 프로그램을 실행시키는데에는 직접적인 프로그램명도 있지만 부수적으로 붙는 옵션들이 존재한다. 이것들을 Argument라 칭하고, 이를 실행시키기 위해 처리하는 과정을 Argument Passing이라 한다. Linux에 Argument Passing이 구현되어 있듯이, PintOS에도 이 기능이 필요하고 이를 구현하고자 한다. 그렇다면, 위 예시의 명령어에서 "pintos"는 위의 Process Name이 될 것이고, 뒤에 붙은 것들은 option들이 될 것이다.
+
+먼저 Process Name을 넘겨주는 부분인 process_execute()의 코드를 살펴보도록 하자.
 
   ```cpp
   tid_t process_execute (const char *file_name) 
@@ -482,7 +484,9 @@ System call : void exit(int status)에서 message를 출력한다. message에 �
 }
   ```
 > 위 method에서는 file_name을 전체를 넘기는 부분은 존재하지만, file_name을 token으로 자르는 부분은 존재하지 않는다. 이것을 통해 유추할 수 있듯이, 현재 pintOS에는 argument passing이 구현되어 있지 않다. 이는 pintOS 공식 문서에서도 확인 할 수 있다. 추가적으로, 이는 Process termination message를 구현할 때도 영향을 미치므로 전체적인 구현 순서를 고려할 필요가 있다.
-> 다시한번 "pintos -q run alarm-single"을 예로 들면, [pintos, -q, run, alarm-single]과 같이 구분되어 pintos는 thread_create의 file_name에 넣어 넘겨주는 것이 합리적일 것이다. Argument들은 처리가 안되었는데, thread_create()의 4번째 인자를 보면 fn_copy이다. 이는 file_name, 즉 전체 명령어를 의미하고, start_process()의 인자가 될 것이므로 start_process에 넘어가는 file_name은 전체 명령어이다. 전체 명령어른 넘겼으므로 이후에 인자들을 처리 할 가능성이 생겼다. start_process를 보자.
+> 다시한번 "pintos -q run alarm-single"을 예로 들면, [pintos, -q, run, alarm-single]과 같이 구분되어 pintos는 thread_create의 file_name에 넣어 넘겨주는 것이 합리적일 것이다. Argument들은 처리가 안되었는데, thread_create()의 4번째 인자를 보면 fn_copy이다. 이는 file_name, 즉 전체 명령어를 의미하고, start_process()의 인자가 될 것이므로 start_process에 넘어가는 file_name은 전체 명령어이다. 전체 명령어른 넘겼으므로 이후에 인자들을 처리 할 가능성이 생겼다.
+
+Process를 시작하는 함수인 start_process()를 보자.
 
   ```cpp
   static void start_process (void *file_name_)
@@ -518,17 +522,17 @@ System call : void exit(int status)에서 message를 출력한다. message에 �
 
 ![figure_1](https://github.com/khg0343/pintOS-Project/blob/master/Figure_1.PNG)
 ## **Solution & Brief Algorithm**
-> process_execute에서 시작하여 file_name 중 첫 token을 thread_create의 첫번째 인자로 넘겨준다. file_name 전체를 start_process에 넘기고 load를 call한다. load에서도 마찬가지로 file_name의 첫 token을 file에 넣어주고 나머지 arguments들은 stack이 setup 되고 나서 별도의 method에서 stack에 넣는다.
+process_execute에서 시작하여 file_name 중 첫 token을 thread_create의 첫번째 인자로 넘겨준다. file_name 전체를 start_process에 넘기고 load를 call한다. load에서도 마찬가지로 file_name의 첫 token을 file에 넣어주고 나머지 arguments들은 stack이 setup 되고 나서 별도의 method에서 stack에 넣는다.
 
 ## **To be added & modifed**
 - tid_t process_execute(const char *file_name)
-> thread structure의 member인 name에 넣는 부분을 수정한다.
+  > thread structure의 member인 name에 넣는 부분을 수정한다.
  
 - bool load(const char *file_name, void (**eip) (void), void **esp)
-> filesys_open에서 넘겨주는 인자를 수정하고, setup_stack 이후에 stack에 arguments를 넣는 method를 추가한다.
+  > filesys_open에서 넘겨주는 인자를 수정하고, setup_stack 이후에 stack에 arguments를 넣는 method를 추가한다.
 
 - void putArguments(char* file_name, void **esp)
-> 위에서 언급한 setup_stack 이후 넣는 추가 method이다. file_name을 넘겨 받아 arguments의 개수, 값, 주소를 파악하여 esp를 조정하면서 넣어야 하는 값을 stack에 넣어준다.
+  > 위에서 언급한 setup_stack 이후 넣는 추가 method이다. file_name을 넘겨 받아 arguments의 개수, 값, 주소를 파악하여 esp를 조정하면서 넣어야 하는 값을 stack에 넣어준다.
 
 </br>
 
@@ -540,7 +544,7 @@ I에서 분석한 System Call Procedure에서 언급했듯, system call을 수�
 
 ## **Solution**
 
-system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argument를 pop하는 함수(pop_arg_stack())를 구현하여야한다. 또한, esp주소가 valid한지 확인하기 위한 함수(is_addr_valid())를 구현하여야한다. 마지막으로, 가장 중요한 system call에 해당하는 기능에 대한 구현이 이루어져야한다.
+system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argument를 pop하는 함수(getArguments())를 구현하여야한다. 또한, esp주소가 valid한지 확인하기 위한 함수(is_addr_valid())를 구현하여야한다. 마지막으로, 가장 중요한 system call에 해당하는 기능에 대한 구현이 이루어져야한다.
 
 ### **Implement the following system calls**
 
@@ -617,55 +621,42 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
 
 ## **To be Added / Modified**
 
-- thread structure에 필요한 변수 추가 및 초기화
-```cpp
-struct thread {
-  ...
-  struct file** file_descriptor_table //fd에 대한 file table로의 pointer를 저장
-  struct list child_list // 자식 프로세스의 list
-  struct list_elem child_elem // 위 list를 관리하기 위한 element
-  struct semaphore sema_child // exec()에서 사용되는 semaphore
-  struct semaphore sema_wait // wait()에서 사용되는 semaphore 
-  int status // thread의 status를 저장
-  ...
-}
-```
+- struct thread
+  > 1. fd에 대한 file table로의 pointer를 저장하는 이중포인터 (struct file** file_descriptor_table) </br>
+  > 2. 자식 프로세스의 list (struct list child_list) </br> 
+  >  3. 위 list를 관리하기 위한 element (struct list_elem child_elem) </br> 
+  >  4. exec()에서 사용되는 semaphore (struct semaphore sema_child) </br> 
+  >  5. wait()에서 사용되는 semaphore (struct semaphore sema_wait) </br>
+  >  6. thread의 status를 저장하는 변수 (int status)
 
-- file에 접근해 있는 동안 다른 thread가 접근하지 못하도록 lock하기 위한 변수 추가.
-```cpp
-/*userprog/syscall.c*/
-struct lock file_lock
-```
+- userprog/syscall.c
+  > file에 접근해 있는 동안 다른 thread가 접근하지 못하도록 lock하기 위한 변수를 추가한다. (struct lock file_lock)
 
-- stack에서 argument를 pop하는 함수 추가
-```cpp
-//stack pointer(sp)로부터 cnt만큼의 argument를 stack에서 pop하여 *arg에 저장
-void pop_arg_stack(int *arg, void* sp, int cnt)
-```
+- void getArguments()(int *arg, void* sp, int cnt)
+  > stack pointer(sp)로부터 cnt만큼의 argument를 stack에서 pop하여 *arg에 저장하는 변수
 
-- 입력된 주소값이 user memory에 해당하는 valid한 함수인지 확인하는 함수
-```cpp
-bool is_addr_valid(void* addr)
-```
+- bool is_addr_valid(void* addr)
+  >입력된 주소값이 user memory에 해당하는 valid한 함수인지 확인하는 함수이다
 
-- system call handler 함수 수정
-```cpp
-/*userprog/syscall.c*/
-static void
-syscall_handler (struct intr_frame *f UNUSED) 
-{
-    if(is_addr_valid(f->esp)) {
-      switch (*(int*)f->esp) {
-        case SYS_HALT : sys_halt(); break;
-        case SYS_EXIT : pop_arg_stack(); sys_exit((int)argv[0]); break;
-        .
-        .
-        case SYS_CLOSE : ...
-        default : sys_exit(-1); //invalid syscall number
-      }
-    } else sys_exit(-1);
-}
-```
+- syscall_handler (struct intr_frame *f UNUSED)
+  ```cpp
+  /*userprog/syscall.c*/
+  static void
+  syscall_handler (struct intr_frame *f UNUSED) 
+  {
+      if(is_addr_valid(f->esp)) {
+        switch (*(int*)f->esp) {
+          case SYS_HALT : sys_halt(); break;
+          case SYS_EXIT : getArguments(); sys_exit((int)argv[0]); break;
+          .
+          .
+          case SYS_CLOSE : ...
+          default : sys_exit(-1); //invalid syscall number
+        }
+      } else sys_exit(-1);
+  }
+  ```
+  > esp 주소가 valid한지 확인하고, 유효하다면 system call number에 따라 switch문으로 나누어 syscall 함수를 실행한다.
 
 
 # **V. Denying Writes to Executables**
