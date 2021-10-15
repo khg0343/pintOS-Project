@@ -12,11 +12,11 @@
 
 이번 프로젝트의 목표는 주어진 Pintos 코드를 수정하여 User program이 실행될 수 있도록 하는 것이다. User program 실행을 위해 아래의 사항들을 구현해야 한다.
 
-1.	Argument passing
-2.	User memory access
-3.	Process terminate messages
-4.	System call
-5.	Denying writes to executables
+1. Argument passing
+2. User memory access
+3. Process terminate messages
+4. System call
+5. Denying writes to executables
 
 
 ------------------------------
@@ -26,11 +26,391 @@
 본 Lab 2에서는 PintOS의 User Program에 대해 주어진 과제를 수행한다.
 주어진 과제를 수행하기 전 현재 pintOS에 구현되어 있는 system을 알아보자.
 
-## **Process execution procedure**
+## **Process Execution Procedure**
+먼저 PintOS의 Process Execution Procedure을 분석해보자.
+
+
+```cpp
+/* threads/init.c */
+/* Pintos main program. */
+int
+main (void)
+{
+  char **argv;
+
+  /* Clear BSS. */  
+  bss_init ();
+
+  /* Break command line into arguments and parse options. */
+  argv = read_command_line ();
+  argv = parse_options (argv);
+  
+  ...
+  
+  /* Run actions specified on kernel command line. */
+  run_actions (argv);
+
+  /* Finish up. */
+  shutdown ();
+  thread_exit ();
+}
+```
+
+```cpp
+/* threads/init.c */
+/* Executes all of the actions specified in ARGV[] up to the null pointer sentinel. */
+static void
+run_actions (char **argv) 
+{
+  /* An action. */
+  struct action 
+    {
+      char *name;                       /* Action name. */
+      int argc;                         /* # of args, including action name. */
+      void (*function) (char **argv);   /* Function to execute action. */
+    };
+
+  /* Table of supported actions. */
+  static const struct action actions[] = 
+    {
+      {"run", 2, run_task},
+#ifdef FILESYS
+      {"ls", 1, fsutil_ls},
+      {"cat", 2, fsutil_cat},
+      {"rm", 2, fsutil_rm},
+      {"extract", 1, fsutil_extract},
+      {"append", 2, fsutil_append},
+#endif
+      {NULL, 0, NULL},
+    };
+  ...
+  
+}
+```
+
+```cpp
+/* userprog/process.c */
+/* Starts a new thread running a user program loaded from
+   FILENAME.  The new thread may be scheduled (and may even exit)
+   before process_execute() returns.  Returns the new process's
+   thread id, or TID_ERROR if the thread cannot be created. */
+tid_t
+process_execute (const char *file_name) 
+{
+  char *fn_copy;
+  tid_t tid;
+
+  /* Make a copy of FILE_NAME.
+     Otherwise there's a race between the caller and load(). */
+  fn_copy = palloc_get_page (0);
+  if (fn_copy == NULL)
+    return TID_ERROR;
+  strlcpy (fn_copy, file_name, PGSIZE);
+
+  /* Create a new thread to execute FILE_NAME. */
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  if (tid == TID_ERROR)
+    palloc_free_page (fn_copy); 
+  return tid;
+}
+```
+
+```cpp
+/* userprog/process.c */
+/* A thread function that loads a user process and starts it running. */
+static void
+start_process (void *file_name_)
+{
+  char *file_name = file_name_;
+  struct intr_frame if_;
+  bool success;
+
+  /* Initialize interrupt frame and load executable. */
+  memset (&if_, 0, sizeof if_);
+  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
+  if_.cs = SEL_UCSEG;
+  if_.eflags = FLAG_IF | FLAG_MBS;
+  success = load (file_name, &if_.eip, &if_.esp);
+
+  /* If load failed, quit. */
+  palloc_free_page (file_name);
+  if (!success) 
+    thread_exit ();
+  ...
+}
+```
+
+```cpp
+/* Loads an ELF executable from FILE_NAME into the current thread.
+   Stores the executable's entry point into *EIP
+   and its initial stack pointer into *ESP.
+   Returns true if successful, false otherwise. */
+bool
+load (const char *file_name, void (**eip) (void), void **esp) 
+{
+  struct thread *t = thread_current ();
+  struct Elf32_Ehdr ehdr;
+  struct file *file = NULL;
+  off_t file_ofs;
+  bool success = false;
+  int i;
+
+  /* Allocate and activate page directory. */
+  t->pagedir = pagedir_create ();
+  if (t->pagedir == NULL) 
+    goto done;
+  process_activate ();
+
+  /* Open executable file. */
+  file = filesys_open (file_name);
+  if (file == NULL) 
+    {
+      printf ("load: %s: open failed\n", file_name);
+      goto done; 
+    }
+
+  ... /* Read and verify executable header. */
+  ... /* Read program headers. */
+
+  /* Set up stack. */
+  if (!setup_stack (esp))
+    goto done;
+
+  /* Start address. */
+  *eip = (void (*) (void)) ehdr.e_entry;
+
+  success = true;
+
+ done:
+  /* We arrive here whether the load is successful or not. */
+  file_close (file);
+  return success;
+}
+```
 
 ## **System Call Procedure**
+이번엔 PintOS의 System Call Procedure을 분석해보자.
+
+System Call은 User Program의 Kernel 영역 접근을 위해 호출되는 kernel이 제공하는 interface이며, 이는 System Call Handler를 통해 이루어진다. System Call이 호출되면 kernel mode로 변환되며 kernel이 대신 해당 작업을 수행하고, 이후 다시 user mode로 변환되어 작업을 이어나간다.
+
+먼저 이번 Project에서 다루어야할 System Call에는 어떤 종류가 있는지 System call number list를 통해 알아보자
+
+```cpp
+/* lib/syscall-nr.h */
+
+/* System call numbers. */
+enum 
+  {
+    /* Projects 2 and later. */
+    SYS_HALT,                   /* Halt the operating system. */
+    SYS_EXIT,                   /* Terminate this process. */
+    SYS_EXEC,                   /* Start another process. */
+    SYS_WAIT,                   /* Wait for a child process to die. */
+    SYS_CREATE,                 /* Create a file. */
+    SYS_REMOVE,                 /* Delete a file. */
+    SYS_OPEN,                   /* Open a file. */
+    SYS_FILESIZE,               /* Obtain a file's size. */
+    SYS_READ,                   /* Read from a file. */
+    SYS_WRITE,                  /* Write to a file. */
+    SYS_SEEK,                   /* Change position in a file. */
+    SYS_TELL,                   /* Report current position in a file. */
+    SYS_CLOSE,                  /* Close a file. */
+...
+```
+
+위의 13개의 System Call이 이번 Project2에서 다루어야하는 부분이며, 해당 기능들에 대한 함수는 아래의 user/syscall.c에 구현되어있다.
+```cpp
+/* lib/user/syscall.h*/
+/* Projects 2 and later. */
+void halt (void) NO_RETURN;
+void exit (int status) NO_RETURN;
+pid_t exec (const char *file);
+int wait (pid_t);
+bool create (const char *file, unsigned initial_size);
+bool remove (const char *file);
+int open (const char *file);
+int filesize (int fd);
+int read (int fd, void *buffer, unsigned length);
+int write (int fd, const void *buffer, unsigned length);
+void seek (int fd, unsigned position);
+unsigned tell (int fd);
+void close (int fd);
+```
+
+그 예시로 exec를 이용하여 설명해보겠다.
+```cpp
+/* lib/user/syscall.c*/
+pid_t
+exec (const char *file)
+{
+  return (pid_t) syscall1 (SYS_EXEC, file);
+}
+```
+> syscall의 함수는 매우 간단하게 구현되어있으며, 후술할 syscall macro에 system call number와 parameter인 file을 argument로 넘겨주는 것이 전부이다.
+
+위에서 사용된 syscall1은 아래와 같은 형태로 정의되어있다
+```cpp
+/**/
+/* Invokes syscall NUMBER, passing argument ARG0, and returns the
+   return value as an `int'. */
+#define syscall1(NUMBER, ARG0)                                           \
+        ({                                                               \
+          int retval;                                                    \
+          asm volatile                                                   \
+            ("pushl %[arg0]; pushl %[number]; int $0x30; addl $8, %%esp" \
+               : "=a" (retval)                                           \
+               : [number] "i" (NUMBER),                                  \
+                 [arg0] "g" (ARG0)                                       \
+               : "memory");                                              \
+          retval;                                                        \
+        })
+```
+> 이때 Number는 위에서 언급한 System call number를 의미하며, Arg0는 exec 함수의 parameter가 한 개이기 때문에 이를 담기 위한 값이다. system call number를 invoke하고, arg들은 user stack에 push한다. 여기서 $0x30은 kernel공간의 interrupt vector table에서 system call handler의 주소를 의미한다.
+
+> syscall1은 arg가 1개인 경우에 대한 정의이며, arg개수에 따라 syscall0-3으로 나누어 사용하면 된다.
+
+
+현재 pintOS의 system call handler인 syscall_handler()는 아래의 코드를 보다시피 아무것도 구현되어있지 않다. 이번 Project에서 user program이 요하는 기능을 user stack의 정보를 통해 수행할 수 있도록 해당 함수에 기능을 구현하여야 한다.
+
+```cpp
+/*userprog/syscall.c*/
+static void
+syscall_handler (struct intr_frame *f UNUSED) 
+{
+  printf ("system call!\n");
+  thread_exit ();
+}
+```
 
 ## **File System**
+마지막으로 PintOS의 File System을 분석해보자.
+
+먼저 PintOS의 file system에서 사용되는 struct를 보도록하자.
+아래는 PintOS의 file의 구조체이다.
+```cpp
+/* filesys/file.c */
+/* An open file. */
+struct file 
+{
+  struct inode *inode;        /* File's inode. */
+  off_t pos;                  /* Current position. */
+  bool deny_write;            /* Has file_deny_write() been called? */
+};
+```
+> inode : file system에서 file의 정보를 저장한다. </br>
+> pos : file을 read 또는 write하는 cursor의 현재 postion을 의미한다. </br>
+> deny_write : file의 write가능 여부를 표시하는 boolean 변수이다.
+
+</br>
+
+inode는 아래와 같은 정보를 저장하고 있는 구조체이다.
+```cpp
+/* filesys/inode.c */
+/* In-memory inode. */
+struct inode 
+{
+  struct list_elem elem;              /* Element in inode list. */
+  block_sector_t sector;              /* Sector number of disk location. */
+  int open_cnt;                       /* Number of openers. */
+  bool removed;                       /* True if deleted, false otherwise. */
+  int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+  struct inode_disk data;             /* Inode content. */
+};
+```
+
+inode의 data를 정의하는 data type인 inode_disk라는 구조체이다.
+
+```cpp
+/* filesys/inode.c */
+/* On-disk inode. Must be exactly BLOCK_SECTOR_SIZE bytes long. */
+struct inode_disk
+{
+  block_sector_t start;               /* First data sector. */
+  off_t length;                       /* File size in bytes. */
+  unsigned magic;                     /* Magic number. */
+  uint32_t unused[125];               /* Not used. */
+};
+```
+
+> inode의 data는 inode_disk 구조체의 형태로 저장되어있으며, inode_disk는 저장한 data의 start부분의 sector의 index와, 그 file의 크기인 length를 저장하여 inode에 저장된 data를 정의하고 있다.
+
+</br>
+
+다음은 filesys에 포함된 다양한 함수를 보도록 하자.
+```cpp
+/* Creates a file named NAME with the given INITIAL_SIZE.
+   Returns true if successful, false otherwise.
+   Fails if a file named NAME already exists,
+   or if internal memory allocation fails. */
+bool
+filesys_create (const char *name, off_t initial_size) 
+{
+  block_sector_t inode_sector = 0;
+  struct dir *dir = dir_open_root ();
+  bool success = (dir != NULL
+                  && free_map_allocate (1, &inode_sector)
+                  && inode_create (inode_sector, initial_size)
+                  && dir_add (dir, name, inode_sector));
+  if (!success && inode_sector != 0) 
+    free_map_release (inode_sector, 1);
+  dir_close (dir);
+
+  return success;
+}
+```
+
+> filesys_create는 파일 이름이 name이고 크기가 initial_size인 file을 만드는 함수이다. </br>
+> 간단히 내부를 보면 inode_sector를 선언하고 해당 sector에 대해 free_map_allocate함수를 이용하여 할당한다. 이후 inode_create함수를 이용하여 initial_size로 inode의 data length를 initialize하고 file system device의 sector에 새 inode를 쓴다. 이렇게 만들어진 inode에 대해 해당 sector가 파일명이 name인 file을 dir에 추가하는 과정을 통해 file이 create됨을 알 수 있다.
+
+```cpp
+/* Opens the file with the given NAME.
+   Returns the new file if successful or a null pointer
+   otherwise.
+   Fails if no file named NAME exists,
+   or if an internal memory allocation fails. */
+struct file *
+filesys_open (const char *name)
+{
+  struct dir *dir = dir_open_root ();
+  struct inode *inode = NULL;
+
+  if (dir != NULL)
+    dir_lookup (dir, name, &inode);
+  dir_close (dir);
+
+  return file_open (inode);
+}
+```
+> filesys_open는 파일 이름이 name인 file을 여는 함수이다. </br>
+> dir_lookup을 통해 파일명이 name인 inode를 찾고, 해당 inode를 file_open하는 구조로 이루어져있다.
+
+```cpp
+/* Deletes the file named NAME.
+   Returns true if successful, false on failure.
+   Fails if no file named NAME exists,
+   or if an internal memory allocation fails. */
+bool
+filesys_remove (const char *name) 
+{
+  struct dir *dir = dir_open_root ();
+  bool success = dir != NULL && dir_remove (dir, name);
+  dir_close (dir); 
+
+  return success;
+}
+```
+> filesys_remove는 파일 이름이 name인 file을 삭제하는 함수이다. </br>
+> dir_remove을 통해 파일명이 name인 inode를 찾아 삭제하는 구조로 이루어져있다.
+
+User Program이 File System로부터 load되거나, System Call이 실행됨에 따라 file system에 대한 code가 필요하다. 하지만, 이번 과제의 초점은 file system을 구현하는 것이 아니기 때문에 이미 구현되어있는 pintOS의 file system의 구조를 파악하고 적절히 사용할 수 있도록 하여야 한다. pintOS 문서에 따르면 filesys에 해당하는 코드는 수정하지 않는 것을 권장하고 있으므로, 구현에 있어 주의하도록 한다.
+
+그렇다면 각 thread가 이러한 file들에 어떻게 접근하고 사용하는 것은 어떻게 이루어질까?
+이때 File Descriptor라는 개념이 사용된다. File Descriptor(fd)란 thread가 file을 다룰 때 사용하는 것으로, thread가 특정 file에 접근할 때 사용하는 추상적인 값이다. fd는 일반적으로 0이 아닌 정수값을 가지며 int형으로 선언한다. 
+thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 fd값을 할당한다. 이때, fd 0, 1, 2는 각각 stdin, stdout, stderr에 기본적으로 indexing되어있으므로 3부터 할당할 수 있다.
+그 다음 thread가 open된 파일에 System Call로 접근하게 되면, fd값을 통해 file을 지칭할 수 있다.
+각각의 thread에는 file descriptor table이 존재하며 각 fd에 대한 file table로의 pointer를 저장하고 있다. 이 pointer를 이용하여 file에 접근할 수 있게 되는 것이다.
+
+현재 PintOS의 코드에는 이러한 부분이 구현되어있지 않다. 이번 Project에서 thread의 file 접근에 대한 기능을 수행할 수 있도록 fd에 대한 부분을 구현하여야 한다.
 
 </br>
 
