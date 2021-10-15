@@ -526,7 +526,7 @@ thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 
 - bool load(const char *file_name, void (**eip) (void), void **esp)
 > filesys_open에서 넘겨주는 인자를 수정하고, setup_stack 이후에 stack에 arguments를 넣는 method를 추가한다.
 
--void putArguments(char* file_name, void **esp)
+- void putArguments(char* file_name, void **esp)
 > 위에서 언급한 setup_stack 이후 넣는 추가 method이다. file_name을 넘겨 받아 arguments의 개수, 값, 주소를 파악하여 esp를 조정하면서 넣어야 하는 값을 stack에 넣어준다.
 
 </br>
