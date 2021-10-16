@@ -18,7 +18,6 @@
 4. System call
 5. Denying writes to executables
 
-
 ------------------------------
 
 # **I. Anaylsis on Current Pintos system**
@@ -29,6 +28,9 @@
 ## **Process Execution Procedure**
 먼저 PintOS의 Process Execution Procedure을 분석해보자.
 
+Project 1을 구현 할 때, Linux Shell에서 "pintos -q run alarm-single"과 같은 명령어로 프로그램을 실행시킨다. 이처럼 프로그램을 실행시키는데에는 직접적인 프로그램명도 있지만 부수적으로 붙는 옵션들이 존재한다. PintOS에서는 이러한 argument를 어떻게 다루고, process를 execution하게 되는지 그 과정을 알아보고자 한다.
+
+PintOS의 main program이 시작되는 init.c의 main함수이다.
 
 ```cpp
 /* threads/init.c */
@@ -55,6 +57,10 @@ main (void)
   thread_exit ();
 }
 ```
+
+> main에서 command line을 읽고 이를 argument와 option으로 나눈다. 이렇게 만들어진 argv에 대해 run_actions()이 호출된다.
+
+그렇다면 run_action()이 어떤 함수인지를 보자.
 
 ```cpp
 /* threads/init.c */
@@ -86,62 +92,87 @@ run_actions (char **argv)
   ...
   
 }
-```
 
-```cpp
-/* userprog/process.c */
-/* Starts a new thread running a user program loaded from
-   FILENAME.  The new thread may be scheduled (and may even exit)
-   before process_execute() returns.  Returns the new process's
-   thread id, or TID_ERROR if the thread cannot be created. */
-tid_t
-process_execute (const char *file_name) 
-{
-  char *fn_copy;
-  tid_t tid;
-
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
-    return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
-
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
-  return tid;
-}
-```
-
-```cpp
-/* userprog/process.c */
-/* A thread function that loads a user process and starts it running. */
+/* Runs the task specified in ARGV[1]. */
 static void
-start_process (void *file_name_)
+run_task (char **argv)
 {
-  char *file_name = file_name_;
-  struct intr_frame if_;
-  bool success;
-
-  /* Initialize interrupt frame and load executable. */
-  memset (&if_, 0, sizeof if_);
-  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
-  if_.cs = SEL_UCSEG;
-  if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
-
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
-  ...
+  const char *task = argv[1];
+  
+  printf ("Executing '%s':\n", task);
+#ifdef USERPROG
+  process_wait (process_execute (task));
+#else
+  run_test (task);
+#endif
+  printf ("Execution of '%s' complete.\n", task);
 }
 ```
 
+> run_action()은 parameter로 넘겨받은 argument에 대해 action을 수행하는 함수이다. user program을 실행하게 되면, run 'user program'이 수행됨에 따라 argc는 2가 되는 것이고, 이에 따른 run_task가 호출된다. run_task에서는 run을 통해 task로 user program라는 인자가 넘어온 상태이고, 이 task에 대한 process_execute와 process_wait함수가 호출되는 형태이다.
+
+process_wait()과 process_execute()의 코드를 살펴보도록 하자.
+
+  ```cpp
+  /*userprog/process.c*/
+  int
+  process_wait (tid_t child_tid UNUSED) 
+  {
+    return -1;
+  }
+  ```
+
+  > process wait의 경우 child process가 종료될때까지 대기하도록 하는 함수이다. 하지만 현재 pintOS에는 이 부분이 구현이 되어있지 않고 -1만 return하게 구현된 상태이다.
+
+  ```cpp
+   /*userprog/process.c*/
+  tid_t process_execute (const char *file_name) 
+  {
+    char *fn_copy;
+    tid_t tid;
+
+    /* Make a copy of FILE_NAME.
+     Otherwise there's a race between the caller and load(). */
+    fn_copy = palloc_get_page (0);
+    if (fn_copy == NULL)
+      return TID_ERROR;
+    strlcpy (fn_copy, file_name, PGSIZE);
+
+    /* Create a new thread to execute FILE_NAME. */
+    tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+    if (tid == TID_ERROR)
+      palloc_free_page (fn_copy); 
+    return tid;
+}
+  ```
+
+> 위 method에서는 file_name을 전체를 넘기는 부분은 존재하지만, file_name을 token으로 자르는 부분은 존재하지 않는다. 이것을 통해 유추할 수 있듯이, 현재 pintOS에는 argument passing이 구현되어 있지 않다. 관련된 내용은 Argument Passing Implement부분에서 구체적으로 후술하겠다. 추가적으로, 이는 Process termination message를 구현할 때도 영향을 미치므로 전체적인 구현 순서를 고려할 필요가 있다.
+>  
+> 다시한번 "pintos -q run alarm-single"을 예로 들면, [pintos, -q, run, alarm-single]과 같이 구분되어 pintos는 thread_create의 file_name에 넣어 넘겨주는 것이 합리적일 것이다. Argument들은 처리가 안되었는데, thread_create()의 4번째 인자를 보면 fn_copy이다. 이는 file_name, 즉 전체 명령어를 의미하고, start_process()의 인자가 될 것이므로 start_process에 넘어가는 file_name은 전체 명령어이다. 전체 명령어른 넘겼으므로 이후에 인자들을 처리 할 가능성이 생겼다.
+
+다음으로는 Process를 시작하는 함수인 start_process()를 보자.
+
+  ```cpp
+  static void start_process (void *file_name_)
+  {
+    char *file_name = file_name_;
+    ...
+    success = load (file_name, &if_.eip, &if_.esp);
+
+    /* If load failed, quit. */
+    palloc_free_page (file_name);
+    if (!success) 
+    thread_exit ();
+    ...
+  ```
+
+> 위 method를 보면 load에서도 전체 명령어를 넘긴다. 밑에 if(!success) 코드를 보았을 때, load가 넘겨주는 값이 0이면 thread_exit을 call하는 것과 주석을 보아 load에서 0이 아닌 값을 return하면 load가 성공, 즉 실행이 성공되었다는 것을 유추할 수 있다. 더불어, load에서 argument들을 처리할 것이라는 것을 예측할 수 있다.
+
+그렇다면 load() 함수를 자세히 분석해보자.
+
 ```cpp
-/* Loads an ELF executable from FILE_NAME into the current thread.
+  /*userprog/process.c*/
+  /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
@@ -169,8 +200,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
-  ... /* Read and verify executable header. */
-  ... /* Read program headers. */
+  /* Read and verify executable header. */
+  ...
+
+  /* Read program headers. */
+  ...
 
   /* Set up stack. */
   if (!setup_stack (esp))
@@ -186,7 +220,17 @@ load (const char *file_name, void (**eip) (void), void **esp)
   file_close (file);
   return success;
 }
-```
+  }
+  ```
+
+> load를 보면 pagedir_create라는 함수를 통해 user process의 page table을 생성하고, filesys_open이라는 method를 통해 실행하고자 하는 프로그램의 이름으로 실행가능한 파일을 open한다. 그 다음에는 ELF header정보를 읽어오고, esp와 eip setting을 한다.
+>  
+> process_activate()는 context switch가 일어남에 따라 현재 process의 page table을 activate하는 함수이다.
+>  
+> setup_stack()는 stack을 setting 해주는 것인데, 설명을 보면 0~esp의 크기의 stack을 setting 해준다. esp는 현재 가리키고 있는 stack pointer이며 이는 setup_stack에서 PHYS_BASE인 default 값으로 설정된다. 이 stack에 argument들을 넣어서 esp를 이용하여 함수들이 필요한 인자를 사용하게 구현하면 될 것이다. pintOS 문서를 참고하면, 이 stack은 위에서 아래로 자라는 것을 알 수 있다. 따라서, arguments을 stack에 넣을 때 esp를 줄여가면서 넣으면 될 것이다. 넣는 순서, 사이즈 등은 아래 사진을 참고하여 같은 방향으로 구현하고자 한다.
+
+//TODO: 사진 넣기
+![figure_1](https://github.com/khg0343/pintOS-Project/blob/master/Figure_1.PNG)
 
 ## **System Call Procedure**
 이번엔 PintOS의 System Call Procedure을 분석해보자.
@@ -219,6 +263,7 @@ enum
 ```
 
 위의 13개의 System Call이 이번 Project2에서 다루어야하는 부분이며, 해당 기능들에 대한 함수는 아래의 user/syscall.c에 구현되어있다.
+
 ```cpp
 /* lib/user/syscall.h*/
 /* Projects 2 and later. */
@@ -238,6 +283,7 @@ void close (int fd);
 ```
 
 그 예시로 exec를 이용하여 설명해보겠다.
+
 ```cpp
 /* lib/user/syscall.c*/
 pid_t
@@ -246,9 +292,11 @@ exec (const char *file)
   return (pid_t) syscall1 (SYS_EXEC, file);
 }
 ```
+
 > syscall의 함수는 매우 간단하게 구현되어있으며, 후술할 syscall macro에 system call number와 parameter인 file을 argument로 넘겨주는 것이 전부이다.
 
-위에서 사용된 syscall1은 아래와 같은 형태로 정의되어있다
+위에서 사용된 syscall1은 아래와 같은 형태로 정의되어있다.
+
 ```cpp
 /**/
 /* Invokes syscall NUMBER, passing argument ARG0, and returns the
@@ -265,10 +313,10 @@ exec (const char *file)
           retval;                                                        \
         })
 ```
+
 > 이때 Number는 위에서 언급한 System call number를 의미하며, Arg0는 exec 함수의 parameter가 한 개이기 때문에 이를 담기 위한 값이다. system call number를 invoke하고, arg들은 user stack에 push한다. 여기서 $0x30은 kernel공간의 interrupt vector table에서 system call handler의 주소를 의미한다.
-
+>  
 > syscall1은 arg가 1개인 경우에 대한 정의이며, arg개수에 따라 syscall0-3으로 나누어 사용하면 된다.
-
 
 현재 pintOS의 system call handler인 syscall_handler()는 아래의 코드를 보다시피 아무것도 구현되어있지 않다. 이번 Project에서 user program이 요하는 기능을 user stack의 정보를 통해 수행할 수 있도록 해당 함수에 기능을 구현하여야 한다.
 
@@ -287,6 +335,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
 먼저 PintOS의 file system에서 사용되는 struct를 보도록하자.
 아래는 PintOS의 file의 구조체이다.
+
 ```cpp
 /* filesys/file.c */
 /* An open file. */
@@ -297,6 +346,7 @@ struct file
   bool deny_write;            /* Has file_deny_write() been called? */
 };
 ```
+
 > inode : file system에서 file의 정보를 저장한다. </br>
 > pos : file을 read 또는 write하는 cursor의 현재 postion을 의미한다. </br>
 > deny_write : file의 write가능 여부를 표시하는 boolean 변수이다.
@@ -304,6 +354,7 @@ struct file
 </br>
 
 inode는 아래와 같은 정보를 저장하고 있는 구조체이다.
+
 ```cpp
 /* filesys/inode.c */
 /* In-memory inode. */
@@ -337,6 +388,7 @@ struct inode_disk
 </br>
 
 다음은 filesys에 포함된 다양한 함수를 보도록 하자.
+
 ```cpp
 /* Creates a file named NAME with the given INITIAL_SIZE.
    Returns true if successful, false otherwise.
@@ -381,6 +433,7 @@ filesys_open (const char *name)
   return file_open (inode);
 }
 ```
+
 > filesys_open는 파일 이름이 name인 file을 여는 함수이다. </br>
 > dir_lookup을 통해 파일명이 name인 inode를 찾고, 해당 inode를 file_open하는 구조로 이루어져있다.
 
@@ -399,14 +452,14 @@ filesys_remove (const char *name)
   return success;
 }
 ```
+
 > filesys_remove는 파일 이름이 name인 file을 삭제하는 함수이다. </br>
 > dir_remove을 통해 파일명이 name인 inode를 찾아 삭제하는 구조로 이루어져있다.
 
 User Program이 File System로부터 load되거나, System Call이 실행됨에 따라 file system에 대한 code가 필요하다. 하지만, 이번 과제의 초점은 file system을 구현하는 것이 아니기 때문에 이미 구현되어있는 pintOS의 file system의 구조를 파악하고 적절히 사용할 수 있도록 하여야 한다. pintOS 문서에 따르면 filesys에 해당하는 코드는 수정하지 않는 것을 권장하고 있으므로, 구현에 있어 주의하도록 한다.
 
-
 그렇다면 각 thread가 이러한 file들에 어떻게 접근하고 사용하는 것은 어떻게 이루어질까?
-이때 File Descriptor라는 개념이 사용된다. File Descriptor(fd)란 thread가 file을 다룰 때 사용하는 것으로, thread가 특정 file에 접근할 때 사용하는 추상적인 값이다. fd는 일반적으로 0이 아닌 정수값을 가지며 int형으로 선언된다. 
+이때 File Descriptor라는 개념이 사용된다. File Descriptor(fd)란 thread가 file을 다룰 때 사용하는 것으로, thread가 특정 file에 접근할 때 사용하는 추상적인 값이다. fd는 일반적으로 0이 아닌 정수값을 가지며 int형으로 선언된다.
 thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 fd값을 할당한다. 이때, fd 0, 1은 각각 stdin, stdout에 기본적으로 indexing되어있으므로 2부터 할당할 수 있다.
 그 다음 thread가 open된 파일에 System Call로 접근하게 되면, fd값을 통해 file을 지칭할 수 있다.
 각각의 thread에는 file descriptor table이 존재하며 각 fd에 대한 file table로의 pointer를 저장하고 있다. 이 pointer를 이용하여 file에 접근할 수 있게 되는 것이다.
@@ -426,7 +479,7 @@ User Program이 종료되면, 종료된 Process의 Name과 어떠한 system call
 
 >위 형식에서 variable_1은 Process의 Name이고, variable_2는 exit code 이다. 위는 Prototype으로 변수가 지정될 수 도 있고 directly하게 function을 call할 수도 있다. 각 요소를 어떻게 불러올지에 대해 알아보자.
 ### 1. Process Name
-Process Name은 process_execute(const char *file_name)에서 시작된다. 
+Process Name은 process_execute(const char *file_name)에서 시작된다.
 
   ```cpp
   /*userprog/process.c*/
@@ -448,86 +501,27 @@ Process Name은 process_execute(const char *file_name)에서 시작된다.
 System call : void exit(int status)에서 message를 출력한다. message에 담길 정보 중 process name은 thread structure에서 받아오는 method 하나를 구현하고 exit code는 exit에 넘겨준 status를 사용한다. 이때, 주의할 점으로는 kernel thread가 종료되거나 halt가 발생한 경우에는 process가 종료된 것이 아니므로 위 메세지를 출력하지 않아야 하는데 이 경우는 애초에 다른 exit()을 호출하지 않기 때문에 해결 된 issue이다.
 
 ## **To be Added & Modified**
+
 - void exit(int status)
   > Termination message를 출력하는 code를 추가한다.
 
 - char* get_ProcessName(struct thread* cur)
   > 종료되는 thread의 Name을 받아오는 method를 추가한다.
 
-
 </br>
 
 # **III. Argument Passing**
 ## **Analysis**
-Project 1을 구현 할 때, Linux Shell에서 "pintos -q run alarm-single"과 같은 명령어로 프로그램을 실행시킨다. 이처럼 프로그램을 실행시키는데에는 직접적인 프로그램명도 있지만 부수적으로 붙는 옵션들이 존재한다. 이것들을 Argument라 칭하고, 이를 실행시키기 위해 처리하는 과정을 Argument Passing이라 한다. Linux에 Argument Passing이 구현되어 있듯이, PintOS에도 이 기능이 필요하고 이를 구현하고자 한다. 그렇다면, 위 예시의 명령어에서 "pintos"는 위의 Process Name이 될 것이고, 뒤에 붙은 것들은 option들이 될 것이다.
+I에서 분석한 Process Execution Procedure에서 언급했듯, PintOS에도 명령어를 통해 프로그램을 수행할 수 있도록 argument를 나누고 실행시키기 위해 처리하는 과정인 Argument Passing 기능이 필요하고, 이를 구현하고자 한다.
 
-먼저 Process Name을 넘겨주는 부분인 process_execute()의 코드를 살펴보도록 하자.
-
-  ```cpp
-  tid_t process_execute (const char *file_name) 
-  {
-    char *fn_copy;
-    tid_t tid;
-
-    /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-    fn_copy = palloc_get_page (0);
-    if (fn_copy == NULL)
-      return TID_ERROR;
-    strlcpy (fn_copy, file_name, PGSIZE);
-
-    /* Create a new thread to execute FILE_NAME. */
-    tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-    if (tid == TID_ERROR)
-      palloc_free_page (fn_copy); 
-    return tid;
-}
-  ```
-> 위 method에서는 file_name을 전체를 넘기는 부분은 존재하지만, file_name을 token으로 자르는 부분은 존재하지 않는다. 이것을 통해 유추할 수 있듯이, 현재 pintOS에는 argument passing이 구현되어 있지 않다. 이는 pintOS 공식 문서에서도 확인 할 수 있다. 추가적으로, 이는 Process termination message를 구현할 때도 영향을 미치므로 전체적인 구현 순서를 고려할 필요가 있다.
-> 다시한번 "pintos -q run alarm-single"을 예로 들면, [pintos, -q, run, alarm-single]과 같이 구분되어 pintos는 thread_create의 file_name에 넣어 넘겨주는 것이 합리적일 것이다. Argument들은 처리가 안되었는데, thread_create()의 4번째 인자를 보면 fn_copy이다. 이는 file_name, 즉 전체 명령어를 의미하고, start_process()의 인자가 될 것이므로 start_process에 넘어가는 file_name은 전체 명령어이다. 전체 명령어른 넘겼으므로 이후에 인자들을 처리 할 가능성이 생겼다.
-
-Process를 시작하는 함수인 start_process()를 보자.
-
-  ```cpp
-  static void start_process (void *file_name_)
-  {
-    char *file_name = file_name_;
-    ...
-    success = load (file_name, &if_.eip, &if_.esp);
-
-    /* If load failed, quit. */
-    palloc_free_page (file_name);
-    if (!success) 
-    thread_exit ();
-    ...
-  ```
-> 위 method를 보면 load에서도 전체 명령어를 넘긴다. 밑에 if(!success) 코드를 보았을 때, load가 넘겨주는 값이 0이면 thread_exit을 call하는 것과 주석을 보아 load에서 0이 아닌 값을 return하면 load가 성공, 즉 실행이 성공되었다는 것을 유추할 수 있다. 더불어, load에서 argument들을 처리할 것이라는 것을 예측할 수 있다. 
-
-  ```cpp
-  bool load (const char *file_name, void (**eip) (void), void **esp) 
-  {
-    ...
-    file = filesys_open (file_name);
-    ...
-    /* Set up stack. */
-    if (!setup_stack (esp))
-      goto done;
-
-    /* Start address. */
-    *eip = (void (*) (void)) ehdr.e_entry;
-    ...
-  }
-  ```
-> load를 보면 filesys_open이라는 method가 있는데, method 설명을 보면 실행하고자 하는 프로그램의 이름을 가지고 실행가능한 파일을 실행한다. 즉, 이 method에서 넘겨주는 것은 명령어 중 가장 처음 부분임을 알 수 있다. 그에 따라, file_name을 넘기는 것이 아니라 file_name을 token으로 구분해 가장 처음 부분을 넘겨주어야 할 것이다. 그 다음에는 setup_stack을 보자. setup_stack은 간단하다. stack을 setting 해주는 것인데, 설명을 보면 0~esp의 크기의 stack을 setting 해준다. esp는 현재 가리키고 있는 stack pointer이며 이는 setup_stack에서 PHYS_BASE인 default 값으로 설정된다. 이 stack에 argument들을 넣어서 esp를 이용하여 함수들이 필요한 인자를 사용하게 구현하면 될 것이다. pintOS 문서를 참고하면, 이 stack은 위에서 아래로 자라는 것을 알 수 있다. 따라서, arguments을 stack에 넣을 때 esp를 줄여가면서 넣으면 될 것이다. 넣는 순서, 사이즈 등은 아래 사진을 참고하여 같은 방향으로 구현하고자 한다.
-
-![figure_1](https://github.com/khg0343/pintOS-Project/blob/master/Figure_1.PNG)
 ## **Solution**
 process_execute에서 시작하여 file_name 중 첫 token을 thread_create의 첫번째 인자로 넘겨준다. file_name 전체를 start_process에 넘기고 load를 call한다. load에서도 마찬가지로 file_name의 첫 token을 file에 넣어주고 나머지 arguments들은 stack이 setup 되고 나서 별도의 method에서 stack에 넣는다.
 
 ## **To be Added & Modified**
+
 - tid_t process_execute(const char *file_name)
   > thread structure의 member인 name에 넣는 부분을 수정한다.
- 
+
 - bool load(const char *file_name, void (**eip) (void), void **esp)
   > filesys_open에서 넘겨주는 인자를 수정하고, setup_stack 이후에 stack에 arguments를 넣는 method를 추가한다.
 
@@ -622,6 +616,7 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
 ## **To be Added & Modified**
 
 - struct thread
+
   > 1. fd에 대한 file table로의 pointer를 저장하는 이중포인터 (struct file** file_descriptor_table) </br>
   > 2. 자식 프로세스의 list (struct list child_list) </br> 
   > 3. 위 list를 관리하기 위한 element (struct list_elem child_elem) </br> 
@@ -639,6 +634,7 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
   >입력된 주소값이 user memory에 해당하는 valid한 함수인지 확인하는 함수이다
 
 - syscall_handler (struct intr_frame *f UNUSED)
+
   ```cpp
   /*userprog/syscall.c*/
   static void
@@ -656,6 +652,7 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
       } else sys_exit(-1);
   }
   ```
+
   > esp 주소가 valid한지 확인하고, 유효하다면 system call number에 따라 switch문으로 나누어 syscall 함수를 실행한다.
 
 
@@ -690,12 +687,14 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
     }
   }
   ```
+
 > 위 method의 주석을 보면, file_deny_write는 말 그대로 write를 거부하는 method이다. File struct에 deny_write라는 boolean value가 있는데, file_deny_write가 call 되었다면 해당 값을 true로 assign하고, file_allow_write를 call하면 해당 값이 false로 assign된다. 즉, 이를 이용하여 일종의 Mutex를 실현하고 잇는 것이다. 그렇다면 이 method를 call해야 할 때는 언제인지 알아보자. File write를 막아야 할 때는 이미 load를 하였을 때이다. 따라서 load에서 file을 open하고 나서 file_deny_write()를 호출한다. 이후, file이 close 될 때 이를 풀어주기 위해 file_allow_write를 호출해준다.
 
 ## **Solution**
 File이 open되는 지점인 load 함수에서 file_deny_write()를 호출하고, file이 close 될 때 file_allow_write를 호출해 다시 권한을 넘긴다.
 
 ## **To be Added & Modified**
+
 - bool load (const char *file_name, void (**eip) (void), void **esp)
   > file이 open 후 시점에 file_deny_write를 호출한다.
 - file_allow_write는 이미 file_close안에 구현되어 있다.
