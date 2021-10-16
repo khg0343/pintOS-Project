@@ -232,6 +232,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
 //TODO: 사진 넣기
 ![figure_1](https://github.com/khg0343/pintOS-Project/blob/master/Figure_1.PNG)
 
+- 코드 분석 결과 전체적인 User Program 실행 방법은 아래 그림과 같다. 구현이 필요한 일부 부분에 대한 구간도 표시를 해놓았다.
+![figure_2](https://github.com/khg0343/pintOS-Project/blob/master/Figure_2.png)
+
 ## **System Call Procedure**
 이번엔 PintOS의 System Call Procedure을 분석해보자.
 
