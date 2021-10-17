@@ -13,10 +13,9 @@
 이번 프로젝트의 목표는 주어진 Pintos 코드를 수정하여 User program이 실행될 수 있도록 하는 것이다. User program 실행을 위해 아래의 사항들을 구현해야 한다.
 
 1. Argument passing
-2. User memory access
-3. Process terminate messages
-4. System call
-5. Denying writes to executables
+2. Process terminate messages
+3. System call
+4. Denying writes to executables
 
 ------------------------------
 
