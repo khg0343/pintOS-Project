@@ -21,13 +21,6 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
-void parse_filename(char *src, char *dest) {
-  int i;
-  strlcpy(dest, src, strlen(src) + 1);
-  for (i=0; dest[i]!='\0' && dest[i] != ' '; i++);
-  dest[i] = '\0';
-}
-
 void construct_esp(char *file_name, void **esp) {
 
   char ** argv;
@@ -175,7 +168,7 @@ start_process (void *file_name_)
 int process_wait (tid_t child_tid)
 {
   int i;
-  for (i = 0; i < 2000000000; i++);
+  for (i = 0; i < 8000000000; i++);
   return -1;
 }
 // int

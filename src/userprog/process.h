@@ -8,4 +8,6 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
 
+void construct_esp(char *file_name, void **esp);
+
 #endif /* userprog/process.h */
