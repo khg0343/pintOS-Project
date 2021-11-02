@@ -29,7 +29,7 @@ exit (int status) {
 pid_t
 exec (const char *file)
 {
-  printf("hello exec");
+  //printf("hello exec");
   return process_execute(file);
 }
 
