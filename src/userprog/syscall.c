@@ -1,4 +1,5 @@
 #include "userprog/syscall.h"
+#include "userprog/process.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
@@ -28,6 +29,7 @@ exit (int status) {
 pid_t
 exec (const char *file)
 {
+  printf("hello exec");
   return process_execute(file);
 }
 
@@ -110,11 +112,14 @@ syscall_handler (struct intr_frame *f )
     case SYS_HALT: halt();
       break;
     case SYS_EXIT: 
-      if(!is_user_vaddr(f->esp + 4)) exit(-1);
       exit((int)*(uint32_t *)(f->esp + 4));
       break;
     case SYS_EXEC:
-      if(!is_user_vaddr(f->esp + 4)) exit(-1);
+      printf("hello syscall handler switch exec");
+      if(!is_user_vaddr(f->esp + 4)) {
+        printf("exit! not valid in exec");
+        exit(-1);
+      }
       f->eax = exec((const char*)*(uint32_t *)(f->esp + 4));
       break;
     case SYS_WAIT:
@@ -132,8 +137,12 @@ syscall_handler (struct intr_frame *f )
     case SYS_FILESIZE:
       break;
     case SYS_READ:
+      if(!is_user_vaddr(f->esp + 4) || !is_user_vaddr(f->esp + 8) || !is_user_vaddr(f->esp + 12)) exit(-1);
+      f->eax = read((int)*(uint32_t *)(f->esp + 4), (const void*)*(uint32_t *)(f->esp + 8), (unsigned)*(uint32_t *)(f->esp + 12));
       break;
     case SYS_WRITE:
+      if(!is_user_vaddr(f->esp + 4) || !is_user_vaddr(f->esp + 8) || !is_user_vaddr(f->esp + 12)) exit(-1);
+      f->eax = write((int)*(uint32_t *)(f->esp + 4), (const void*)*(uint32_t *)(f->esp + 8), (unsigned)*(uint32_t *)(f->esp + 12));
       break;
     case SYS_SEEK:
       break;
@@ -141,8 +150,7 @@ syscall_handler (struct intr_frame *f )
       break;
     case SYS_CLOSE:
       break;
+    default :
+      exit(-1);
   }
-  
-  printf ("system call!\n");
-  thread_exit ();
 }

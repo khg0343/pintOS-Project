@@ -89,7 +89,9 @@ void construct_esp(char *file_name, void **esp) {
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
 process_execute (const char *file_name) 
-{
+{ 
+  printf("hello process execute\n");
+  printf("this is filename %s \n\n", file_name);
   char *fn_copy;
   tid_t tid;
 
@@ -105,6 +107,8 @@ process_execute (const char *file_name)
   char *remain;
   name = strtok_r(fn_copy_2," ",&remain);
   /* Create a new thread to execute FILE_NAME. */
+  
+  printf("what is your name : %s \n\n", name);
   tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
   palloc_free_page(fn_copy_2);
   if (tid == TID_ERROR)
