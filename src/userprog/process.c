@@ -124,10 +124,12 @@ start_process (void *file_name_)
   bool success;
 
   printf("\n\n\n%s\n\n\n", file_name);
-
-  char cmd_name[256]; // 4KB
-  parse_filename(file_name, cmd_name);
-
+  char* fn_copy_1 = palloc_get_page(0);
+  char* cmd_name; // 4KB
+  char *remain;
+  strlcpy(fn_copy_1,file_name,PGSIZE);
+  //parse_filename(file_name, cmd_name);
+  cmd_name = strtok_r(fn_copy_1," ",&remain);
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -138,6 +140,8 @@ start_process (void *file_name_)
   if(success){
     construct_esp(file_name, &if_.esp);
   }
+  printf("Checking Memory\n");
+  hex_dump(if_.esp, if_.esp, PHYS_BASE - if_.esp,true);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
