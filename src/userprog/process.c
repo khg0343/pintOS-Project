@@ -171,7 +171,7 @@ start_process (void *file_name_)
 int process_wait (tid_t child_tid)
 {
   int i;
-  for (i = 0; i < 1000000000; i++);
+  for (i = 0; i < 8000000000; i++);
   return -1;
 }
 // int
