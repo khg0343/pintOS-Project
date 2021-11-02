@@ -123,7 +123,6 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
-  printf("\n\n\n%s\n\n\n", file_name);
   char* fn_copy_1 = palloc_get_page(0);
   char* cmd_name; // 4KB
   char *remain;
@@ -170,7 +169,7 @@ start_process (void *file_name_)
 int process_wait (tid_t child_tid)
 {
   int i;
-  for (i = 0; i < 1000000000; i++);
+  for (i = 0; i < 8000000000; i++);
   return -1;
 }
 // int
