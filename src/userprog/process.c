@@ -106,9 +106,14 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-
+  char *fn_copy_2 = palloc_get_page(0);
+  strlcpy(fn_copy_2,file_name,PGSIZE);
+  char *name;
+  char *remain;
+  name = strtok_r(fn_copy_2," ",&remain);
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
+  palloc_free_page(fn_copy_2);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -170,7 +175,7 @@ start_process (void *file_name_)
 int process_wait (tid_t child_tid)
 {
   int i;
-  for (i = 0; i < 8000000000; i++);
+  for (i = 0; i < 2000000000; i++);
   return -1;
 }
 // int
