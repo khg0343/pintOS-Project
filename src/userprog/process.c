@@ -123,7 +123,6 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
-  //printf("\n\n\n%s\n\n\n", file_name);
   char* fn_copy_1 = palloc_get_page(0);
   char* cmd_name; // 4KB
   char *remain;
