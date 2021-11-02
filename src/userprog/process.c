@@ -123,7 +123,7 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
-  printf("\n\n\n%s\n\n\n", file_name);
+  //printf("\n\n\n%s\n\n\n", file_name);
   char* fn_copy_1 = palloc_get_page(0);
   char* cmd_name; // 4KB
   char *remain;
@@ -136,12 +136,13 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (cmd_name, &if_.eip, &if_.esp);
-  printf("value of success : %d\n",success);
+  //printf("value of success : %d\n",success);
   if(success){
     construct_esp(file_name, &if_.esp);
   }
-  printf("Checking Memory\n");
-  hex_dump(if_.esp, if_.esp, PHYS_BASE - if_.esp,true);
+  //printf("Checking Memory\n");
+  //hex_dump(if_.esp, if_.esp, PHYS_BASE - if_.esp,true);
+  palloc_free_page(fn_copy_1);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
