@@ -134,7 +134,7 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (cmd_name, &if_.eip, &if_.esp);
-
+  printf("value of success : %d\n",success);
   if(success){
     construct_esp(file_name, &if_.esp);
   }
@@ -442,7 +442,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
      it then user code that passed a null pointer to system calls
      could quite likely panic the kernel by way of null pointer
      assertions in memcpy(), etc. */
-  if (phdr->p_offset < PGSIZE)
+  if (phdr->p_vaddr < PGSIZE)
     return false;
 
   /* It's okay. */
