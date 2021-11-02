@@ -21,6 +21,75 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+void parse_filename(char *src, char *dest) {
+  int i;
+  strlcpy(dest, src, strlen(src) + 1);
+  for (i=0; dest[i]!='\0' && dest[i] != ' '; i++);
+  dest[i] = '\0';
+}
+
+void construct_esp(char *file_name, void **esp) {
+
+  char ** argv;
+  int argc;
+  int total_len;
+  char stored_file_name[256];
+  char *token;
+  char *last;
+  int i;
+  int len;
+  
+  strlcpy(stored_file_name, file_name, strlen(file_name) + 1);
+  token = strtok_r(stored_file_name, " ", &last);
+  argc = 0;
+  /* calculate argc */
+  while (token != NULL) {
+    argc += 1;
+    token = strtok_r(NULL, " ", &last);
+  }
+  argv = (char **)malloc(sizeof(char *) * argc);
+  /* store argv */
+  strlcpy(stored_file_name, file_name, strlen(file_name) + 1);
+  for (i = 0, token = strtok_r(stored_file_name, " ", &last); i < argc; i++, token = strtok_r(NULL, " ", &last)) {
+    len = strlen(token);
+    argv[i] = token;
+
+  }
+
+  /* push argv[argc-1] ~ argv[0] */
+  total_len = 0;
+  for (i = argc - 1; 0 <= i; i --) {
+    len = strlen(argv[i]);
+    *esp -= len + 1;
+    total_len += len + 1;
+    strlcpy(*esp, argv[i], len + 1);
+    argv[i] = *esp;
+  }
+  /* push word align */
+  *esp -= total_len % 4 != 0 ? 4 - (total_len % 4) : 0;
+  /* push NULL */
+  *esp -= 4;
+  **(uint32_t **)esp = 0;
+  /* push address of argv[argc-1] ~ argv[0] */
+  for (i = argc - 1; 0 <= i; i--) {
+    *esp -= 4;
+    **(uint32_t **)esp = argv[i];
+  }
+  /* push address of argv */
+  *esp -= 4;
+  **(uint32_t **)esp = *esp + 4;
+
+  /* push argc */
+  *esp -= 4;
+  **(uint32_t **)esp = argc;
+  
+  /* push return address */
+  *esp -= 4;
+  **(uint32_t **)esp = 0;
+
+  free(argv);
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -54,12 +123,21 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
+  printf("\n\n\n%s\n\n\n", file_name);
+
+  char cmd_name[256]; // 4KB
+  parse_filename(file_name, cmd_name);
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (cmd_name, &if_.eip, &if_.esp);
+
+  if(success){
+    construct_esp(file_name, &if_.esp);
+  }
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -85,11 +163,17 @@ start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int
-process_wait (tid_t child_tid UNUSED) 
+int process_wait (tid_t child_tid)
 {
+  int i;
+  for (i = 0; i < 1000000000; i++);
   return -1;
 }
+// int
+// process_wait (tid_t child_tid UNUSED) 
+// {
+//   return -1;
+// }
 
 /* Free the current process's resources. */
 void
@@ -358,7 +442,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
      it then user code that passed a null pointer to system calls
      could quite likely panic the kernel by way of null pointer
      assertions in memcpy(), etc. */
-  if (phdr->p_vaddr < PGSIZE)
+  if (phdr->p_offset < PGSIZE)
     return false;
 
   /* It's okay. */

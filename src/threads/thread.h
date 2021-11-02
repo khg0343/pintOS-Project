@@ -8,10 +8,10 @@
 /* States in a thread's life cycle. */
 enum thread_status
   {
-    THREAD_RUNNING,     /* 실행중인 Thread Status이다. */
-    THREAD_READY,       /* 현재 실행중은 아니나, Ready되어있는 Thread Status이다. */
-    THREAD_BLOCKED,     /* Event가 발생하기 전까지 Block되어있는 Thread Status이다. */
-    THREAD_DYING        /* 할당 해제될 Thread Status이다. */
+    THREAD_RUNNING,     /* Running thread. */
+    THREAD_READY,       /* Not running but ready to run. */
+    THREAD_BLOCKED,     /* Waiting for an event to trigger. */
+    THREAD_DYING        /* About to be destroyed. */
   };
 
 /* Thread identifier type.
@@ -83,26 +83,15 @@ typedef int tid_t;
 struct thread
   {
     /* Owned by thread.c. */
-    tid_t tid;                          /* Thread를 식별하는 고유 ID이다.(Thread ID)*/
-    enum thread_status status;          /* Thread의 상태를 의미한다. (Running, Ready, Blocked, Dying)*/
-    char name[16];                      /* Thread의 이름이다.*/
-    uint8_t *stack;                     /* Thread의 Stack Pointer이다. */
-    int priority;                       /* Thread의 Priority이다. Priority는 0 ~ 63사이의 값을 가지며, Default 값은 31이다. */ 
-    struct list_elem allelem;           /* 모든 Thread가 담겨있는 List이다. Doubly Linked List를 기반으로 한다.*/
+    tid_t tid;                          /* Thread identifier. */
+    enum thread_status status;          /* Thread state. */
+    char name[16];                      /* Name (for debugging purposes). */
+    uint8_t *stack;                     /* Saved stack pointer. */
+    int priority;                       /* Priority. */
+    struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* Wait Status의 Threads가 담겨있는 List이다. */
-    /* Wait Status란 Ready와 Blocked Status를 의미한다. 이는 Dual Purpose로 사용될 수 있는데, 
-       두 Status는 상호 배제적이므로 Ready만 담거나, Blocked만 담거나 할 수 있다. */
-
-   int origin_priority;             //donation이전의 기존 priority
-   struct list donation_list;       //thread에 priority를 donate한 thread들의 리스트
-   struct list_elem donation_elem;  //위 list를 관리하기 위한 element
-   struct lock *wait_lock;          //이 lock이 release될 때까지 thread는 기다린다.
-
-   /*Variable for Advanced Scheduler*/
-   int nice;
-   int recent_cpu;
+    struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -110,17 +99,13 @@ struct thread
 #endif
 
     /* Owned by thread.c. */
-    unsigned magic;                     
-    /* Thread의 Stack Overflow를 확인하는 값이다. Stack Pointer가 이 값을 가리키면 Overflow이다. */ 
-    int64_t WakeUpTicks;
-    /*Thread가 일어날 시간을 담는 Variable이다.*/
+    unsigned magic;                     /* Detects stack overflow. */
   };
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
-// extern bool thread_load_avg;
 
 void thread_init (void);
 void thread_start (void);
@@ -152,18 +137,5 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-
-void thread_sleep(int64_t ticks);
-void thread_wakeup(int64_t ticks);
-void thread_compare(void);
-bool CompareWakeUpTick(struct list_elem *sleep_elem, struct list_elem *slept_elem, void *aux);
-bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux);
-
-void mlfqs_cal_priority(struct thread *thrd);
-void mlfqs_cal_recent_cpu(struct thread *thrd);
-void mlfqs_inc_recent_cpu();
-void mlfqs_priority();
-void mlfqs_recent_cpu();
-void mlfqs_load_avg();
 
 #endif /* threads/thread.h */
