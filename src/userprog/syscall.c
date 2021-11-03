@@ -75,6 +75,8 @@ wait (pid_t pid)
 bool
 create (const char *file, unsigned initial_size)
 {
+  if(file==NULL)
+    sys_exit(-1);
   return filesys_create(file, initial_size);
 }
 
