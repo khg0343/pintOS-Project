@@ -105,10 +105,6 @@ process_execute (const char *file_name)
   char *remain;
   name = strtok_r(fn_copy_2," ",&remain);
   /* Create a new thread to execute FILE_NAME. */
-  
-  if (filesys_open(name) == NULL) {
-    return -1; 
-  }
 
   tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
   palloc_free_page(fn_copy_2);
@@ -149,8 +145,13 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
+
+  thread_current()->isLoad = success;
+  sema_up(&thread_current()->sema_load);
+  if (!success) {
     thread_exit ();
+  }
+    
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -175,20 +176,18 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  struct list_elem* e;
-  struct thread* t = NULL;
-  int status;
+  struct thread *parent = thread_current();
+  struct thread *child;
   
-  for (e = list_begin(&(thread_current()->child_list)); e != list_end(&(thread_current()->child_list)); e = list_next(e)) {
-    t = list_entry(e, struct thread, child_elem);
-    if (child_tid == t->tid) {
-      sema_down(&(t->child_lock));
-      status = t->exit_status;
-      list_remove(&(t->child_elem));
-      return status;
-    }   
-  }
-  return -1; 
+  if (!(child = get_child_process(child_tid))) return -1;
+
+  sema_down(&child->sema_exit);
+  list_remove(&child->child_elem);
+  int exit = child->exit_status;
+  palloc_free_page(child);
+
+  return exit;
+
 }
 
 /* Free the current process's resources. */
@@ -214,7 +213,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-    sema_up(&cur->child_lock);
+    sema_up(&cur->sema_exit);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -563,4 +562,30 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+struct thread *get_child_process (pid_t pid)
+{
+  struct list_elem *e;
+  struct list *child_list = &thread_current()->child_list;
+  struct thread *thrd;
+  /* 자식 리스트에 접근하여 프로세스 디스크립터 검색 */
+  for (e = list_begin (child_list); e != list_end (child_list); e = list_next (e))
+  {
+    thrd = list_entry(e, struct thread, child_elem);
+    if(thrd->tid == pid) /* 해당 pid가 존재하면 프로세스 디스크립터 반환 */
+      return thrd;
+  }
+  return NULL; /* 리스트에 존재하지 않으면 NULL 리턴 */
+}
+
+void remove_child_process(struct thread *cp)
+{
+  if(cp != NULL)
+	{
+		list_remove(&(cp->child_elem));  /* 자식 리스트에서 제거*/
+		palloc_free_page(cp);           /* 프로세스 디스크립터 메모리 해제 */
+	}
+
+
 }

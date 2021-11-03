@@ -5,8 +5,32 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "filesys/filesys.h"
 
 static void syscall_handler (struct intr_frame *);
+
+bool check_address (void *addr)
+{
+  // if(is_user_vaddr(addr)) {
+  //   printf("yes it's valid\n");
+  //   return true;
+  // }
+  // else {
+  //   printf("yes it's invalid\n");
+  //   return false;
+  // }
+
+  if (addr >= 0x8048000 && addr < 0xc0000000 && addr != 0) return true;
+  else return false;
+}
+
+void get_argument(void *esp, int *arg, int count){
+  int i;
+  for(i = 0; i < count; i ++){
+    if(!check_address(esp + 4*i)) sys_exit(-1);
+    arg[i] = *(int *)(esp + 4*i);
+  }
+}
 
 void
 syscall_init (void) 
@@ -21,9 +45,9 @@ halt (void)
 }
 
 void
-exit (int status) {
+sys_exit (int status) {
   printf("%s: exit(%d)\n", thread_name(), status);
-  thread_current() -> exit_status = status;
+  thread_current()->exit_status = status;
   thread_exit ();
 }
 
@@ -31,6 +55,14 @@ pid_t
 exec (const char *file)
 {
   pid_t pid = process_execute(file);
+  if (pid == -1) return -1;
+
+  struct thread* child = get_child_process(pid);
+  if (!child) return -1;
+  else {
+    if (!child->isLoad) return -1;
+  }
+
   return pid;
 }
 
@@ -49,7 +81,7 @@ create (const char *file, unsigned initial_size)
 bool
 remove (const char *file)
 {
-  
+  return filesys_remove(file);
 }
 
 int
@@ -109,23 +141,28 @@ close (int fd)
 static void
 syscall_handler (struct intr_frame *f ) 
 {
+  int argv[3];
+  if (!check_address(f->esp)) sys_exit(-1);
+
+  
   switch (*(uint32_t *)(f->esp)) {
     case SYS_HALT: halt();
       break;
     case SYS_EXIT: 
-      exit((int)*(uint32_t *)(f->esp + 4));
+      get_argument(f->esp + 4, &argv[0], 1);
+      sys_exit((int)argv[0]);
       break;
     case SYS_EXEC:
-      if(!is_user_vaddr(f->esp + 4)) exit(-1);
-      f->eax = exec((const char*)*(uint32_t *)(f->esp + 4));
+      get_argument(f->esp + 4, &argv[0], 1);
+      f->eax = exec((const char*)argv[0]);
       break;
     case SYS_WAIT:
-      if(!is_user_vaddr(f->esp + 4)) exit(-1);
-      f->eax = wait((pid_t)*(uint32_t *)(f->esp + 4));
+      get_argument(f->esp + 4, &argv[0], 1);
+      f->eax = wait((pid_t)argv[0]);
       break;
     case SYS_CREATE:
-      if(!is_user_vaddr(f->esp + 4) || !is_user_vaddr(f->esp + 8)) exit(-1);
-      f->eax = create((const char*)*(uint32_t *)(f->esp + 4), (unsigned)*(uint32_t *)(f->esp + 8));
+      get_argument(f->esp + 4, &argv[0], 2);
+      f->eax = create((const char*)argv[0], (unsigned)argv[1]);
       break;
     case SYS_REMOVE:
       break;
@@ -134,12 +171,12 @@ syscall_handler (struct intr_frame *f )
     case SYS_FILESIZE:
       break;
     case SYS_READ:
-      if(!is_user_vaddr(f->esp + 4) || !is_user_vaddr(f->esp + 8) || !is_user_vaddr(f->esp + 12)) exit(-1);
-      f->eax = read((int)*(uint32_t *)(f->esp + 4), (const void*)*(uint32_t *)(f->esp + 8), (unsigned)*(uint32_t *)(f->esp + 12));
+      get_argument(f->esp + 4, &argv[0], 3);
+      f->eax = read((int)argv[0], (void*)argv[1], (unsigned)argv[2]);
       break;
     case SYS_WRITE:
-      if(!is_user_vaddr(f->esp + 4) || !is_user_vaddr(f->esp + 8) || !is_user_vaddr(f->esp + 12)) exit(-1);
-      f->eax = write((int)*(uint32_t *)(f->esp + 4), (const void*)*(uint32_t *)(f->esp + 8), (unsigned)*(uint32_t *)(f->esp + 12));
+      get_argument(f->esp + 4, &argv[0], 3);
+      f->eax = write((int)argv[0], (const void*)argv[1], (unsigned)argv[2]);
       break;
     case SYS_SEEK:
       break;
@@ -148,6 +185,6 @@ syscall_handler (struct intr_frame *f )
     case SYS_CLOSE:
       break;
     default :
-      exit(-1);
+      sys_exit(-1);
   }
 }
