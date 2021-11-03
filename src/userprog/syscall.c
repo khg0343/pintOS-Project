@@ -55,13 +55,13 @@ pid_t
 exec (const char *file)
 {
   pid_t pid = process_execute(file);
-  if (pid == -1) return -1;
+  /*if (pid == -1) return -1;
 
   struct thread* child = get_child_process(pid);
   if (!child) return -1;
   else {
     if (!child->isLoad) return -1;
-  }
+  }*//*Changed*/
 
   return pid;
 }

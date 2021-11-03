@@ -105,7 +105,9 @@ process_execute (const char *file_name)
   char *remain;
   name = strtok_r(fn_copy_2," ",&remain);
   /* Create a new thread to execute FILE_NAME. */
-
+  if (filesys_open(name) == NULL) {
+    return -1;
+  }/*Changed*/
   tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
   palloc_free_page(fn_copy_2);
   if (tid == TID_ERROR)
@@ -174,19 +176,35 @@ start_process (void *file_name_)
    does nothing. */
 
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
   struct thread *parent = thread_current();
   struct thread *child;
-  
+  int status;
+  struct list_elem *ele;
   if (!(child = get_child_process(child_tid))) return -1;
-
+  for(ele = list_begin(&parent->child_list);ele!=list_end(&parent->child_list);ele=list_next(ele))
+  {
+    child = list_entry(ele,struct thread, child_elem);
+    if(child_tid == child ->tid)
+    {
+      sema_down(&child->sema_exit);
+      status = child->exit_status;
+      list_remove(&(child->child_elem));
+      sema_up(&(child->sema_load));
+      palloc_free_page(child);
+      return status;
+    }/*Changed*/
+  }
+  return -1;
+  /*
   sema_down(&child->sema_exit);
   list_remove(&child->child_elem);
   int exit = child->exit_status;
   palloc_free_page(child);
 
-  return exit;
+  return exit;*/
+
 
 }
 
@@ -214,6 +232,7 @@ process_exit (void)
       pagedir_destroy (pd);
     }
     sema_up(&cur->sema_exit);
+    sema_down(&cur->sema_load);/*Changed*/
 }
 
 /* Sets up the CPU for running user code in the current
