@@ -16,9 +16,9 @@
 
 ## Brief Algorithm
 
-- 1.    Process_execute()가 실행되면 file_name의 첫 부분(token이라 명명)을 thread_create에 첫번째 인자로 넘긴다. 
-- 2.	Start_process에서 load를 호출한다. 이때, load의 첫번째 parameter를 file_name의 첫번째 token을 넘긴다.
-- 3.	Load()가 success를 return하면 putArguments(file_name,&if_.esp)를 호출하여 메모리에 argument, address of argument, return address를 넣는다.
+- Process_execute()가 실행되면 file_name의 첫 부분(token이라 명명)을 thread_create에 첫번째 인자로 넘긴다. 
+- Start_process에서 load를 호출한다. 이때, load의 첫번째 parameter를 file_name의 첫번째 token을 넘긴다.
+- Load()가 success를 return하면 putArguments(file_name,&if_.esp)를 호출하여 메모리에 argument, address of argument, return address를 넣는다.
 
 
 ## Implementation
