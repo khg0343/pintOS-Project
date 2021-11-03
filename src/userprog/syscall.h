@@ -5,7 +5,7 @@ typedef int pid_t;
 
 void syscall_init (void);
 void halt (void);
-void exit (int status);
+void sys_exit (int status);
 pid_t exec (const char *cmd_lime);
 int wait (pid_t pid);
 // bool create (const char *file, unsigned initial_size);

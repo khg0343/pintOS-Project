@@ -198,6 +198,14 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  /*TODO*/
+  // parent = /* TODO1 : 부모 프로세스 저장 */
+  sema_init(&sema_exit, 0); /* exit 세마포어 0으로 초기화 */
+  sema_init(&sema_load, 0); /* load 세마포어 0으로 초기화 */
+  isExit = false; /* 프로세스가 종료되지 않음 */
+  isLoad = false; /* 프로그램이 로드되지 않음 */
+  /* TODO2 : 자식 리스트에 추가 */
+  
   /* Add to run queue. */
   thread_unblock (t);
 
@@ -468,8 +476,9 @@ init_thread (struct thread *t, const char *name, int priority)
   list_push_back (&all_list, &t->allelem);
 
   #ifdef USERPROG
-    sema_init(&(t->child_lock), 0);        
     list_init(&(t->child_list));
+    sema_init(&(t->sema_exit), 0);   
+    sema_init(&(t->sema_load), 0);    
     list_push_back(&(running_thread()->child_list), &(t->child_elem));
   #endif     
 

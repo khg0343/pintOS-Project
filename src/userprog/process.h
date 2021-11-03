@@ -9,5 +9,6 @@ void process_exit (void);
 void process_activate (void);
 
 void construct_esp(char *file_name, void **esp);
+struct thread *get_child_process (pid_t pid);
 
 #endif /* userprog/process.h */
