@@ -90,8 +90,6 @@ void construct_esp(char *file_name, void **esp) {
 tid_t
 process_execute (const char *file_name) 
 { 
-  //printf("hello process execute\n");
-  //printf("this is filename %s \n\n", file_name);
   char *fn_copy;
   tid_t tid;
 
@@ -108,11 +106,15 @@ process_execute (const char *file_name)
   name = strtok_r(fn_copy_2," ",&remain);
   /* Create a new thread to execute FILE_NAME. */
   
-  //printf("what is your name : %s \n\n", name);
+  if (filesys_open(name) == NULL) {
+    return -1; 
+  }
+
   tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
   palloc_free_page(fn_copy_2);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+
   return tid;
 }
 
@@ -169,17 +171,25 @@ start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait (tid_t child_tid)
+
+int
+process_wait (tid_t child_tid UNUSED) 
 {
-  int i;
-  for (i = 0; i < 100000000; i++);
-  return -1;
+  struct list_elem* e;
+  struct thread* t = NULL;
+  int status;
+  
+  for (e = list_begin(&(thread_current()->child_list)); e != list_end(&(thread_current()->child_list)); e = list_next(e)) {
+    t = list_entry(e, struct thread, child_elem);
+    if (child_tid == t->tid) {
+      sema_down(&(t->child_lock));
+      status = t->exit_status;
+      list_remove(&(t->child_elem));
+      return status;
+    }   
+  }
+  return -1; 
 }
-// int
-// process_wait (tid_t child_tid UNUSED) 
-// {
-//   return -1;
-// }
 
 /* Free the current process's resources. */
 void
@@ -204,6 +214,7 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+    sema_up(&cur->child_lock);
 }
 
 /* Sets up the CPU for running user code in the current

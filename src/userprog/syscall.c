@@ -23,14 +23,15 @@ halt (void)
 void
 exit (int status) {
   printf("%s: exit(%d)\n", thread_name(), status);
+  thread_current() -> exit_status = status;
   thread_exit ();
 }
 
 pid_t
 exec (const char *file)
 {
-  //printf("hello exec");
-  return process_execute(file);
+  pid_t pid = process_execute(file);
+  return pid;
 }
 
 int
@@ -115,11 +116,7 @@ syscall_handler (struct intr_frame *f )
       exit((int)*(uint32_t *)(f->esp + 4));
       break;
     case SYS_EXEC:
-      printf("hello syscall handler switch exec");
-      if(!is_user_vaddr(f->esp + 4)) {
-        printf("exit! not valid in exec");
-        exit(-1);
-      }
+      if(!is_user_vaddr(f->esp + 4)) exit(-1);
       f->eax = exec((const char*)*(uint32_t *)(f->esp + 4));
       break;
     case SYS_WAIT:
