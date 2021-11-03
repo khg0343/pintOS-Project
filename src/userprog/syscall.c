@@ -5,6 +5,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "filesys/filesys.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -46,7 +47,7 @@ halt (void)
 void
 sys_exit (int status) {
   printf("%s: exit(%d)\n", thread_name(), status);
-  thread_current() -> exit_status = status;
+  thread_current()->exit_status = status;
   thread_exit ();
 }
 
@@ -74,13 +75,13 @@ wait (pid_t pid)
 bool
 create (const char *file, unsigned initial_size)
 {
-
+  return filesys_create(file, initial_size);
 }
 
 bool
 remove (const char *file)
 {
-  
+  return filesys_remove(file);
 }
 
 int
