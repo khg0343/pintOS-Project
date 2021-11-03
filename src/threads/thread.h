@@ -106,6 +106,8 @@ struct thread
     struct semaphore sema_exit;/* exit 세마포어 */
     struct semaphore sema_load;/* load 세마포어 */
     int exit_status;/* exit 호출 시 종료 status */
+    struct file **fd_table; /* 파일 디스크립터 테이블 */
+    int fd_nxt;             /* 현재 테이블에 존재하는 fd값의 최대값 + 1 */
 #endif
 
     /* Owned by thread.c. */

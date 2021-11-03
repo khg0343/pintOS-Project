@@ -206,6 +206,11 @@ thread_create (const char *name, int priority,
     t->isExit = false; /* 프로세스가 종료되지 않음 */
     t->isLoad = false; /* 프로그램이 로드되지 않음 */
     list_push_back(&(running_thread()->child_list), &(t->child_elem));/* TODO2 : 자식 리스트에 추가 */
+
+    t->fd_nxt = 2;/* fd 값 초기화(0,1은 표준 입력,출력) */
+    t->fd_table = palloc_get_page(PAL_ZERO); /* File Descriptor 테이블에 메모리 할당 */
+    if(t->fd_table == NULL) return TID_ERROR;
+
   #endif
 
   /* Add to run queue. */

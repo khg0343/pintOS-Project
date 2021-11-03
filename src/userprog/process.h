@@ -13,4 +13,8 @@ void construct_esp(char *file_name, void **esp);
 struct thread *get_child_process (pid_t pid);
 void remove_child_process(struct thread *cp);
 
+int process_add_file (struct file *f);
+struct file *process_get_file(int fd);
+void process_close_file(int fd);
+
 #endif /* userprog/process.h */

@@ -75,8 +75,7 @@ wait (pid_t pid)
 bool
 create (const char *file, unsigned initial_size)
 {
-  if(file==NULL)
-    sys_exit(-1);
+  if(file == NULL) sys_exit(-1);
   return filesys_create(file, initial_size);
 }
 
@@ -89,13 +88,24 @@ remove (const char *file)
 int
 open (const char *file)
 {
-  
+  int fd;
+	struct file *f;
+
+	if(f = filesys_open(file)) { /* 파일을 open */
+		fd = process_add_file(f);  /* 해당 파일 객체에 파일 디스크립터 부여 */
+		return fd;                        /* 파일 디스크립터 리턴 */
+	}
+	return -1; /* 해당 파일이 존재하지 않으면 -1 리턴 */
 }
 
 int
 filesize (int fd) 
 {
-  
+	struct file *f;
+	if(f = process_get_file(fd)) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+		return file_length(f); /* 해당 파일의 길이를 리턴 */
+	}
+	return -1;  /* 해당 파일이 존재하지 않으면 -1 리턴 */
 }
 
 int
@@ -104,9 +114,7 @@ read (int fd, void *buffer, unsigned size)
   int i;
   if (fd == 0) {
     for (i = 0; i < size; i ++) {
-      if (((char *)buffer)[i] == '\0') {
-        break;
-      }
+      if (((char *)buffer)[i] == '\0') break;
     }
   }
   return i;
@@ -125,19 +133,29 @@ write (int fd, const void *buffer, unsigned size)
 void
 seek (int fd, unsigned position) 
 {
-  
+  struct file *f = process_get_file(fd); /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+
+	if(f != NULL) file_seek(f, position); /* 해당 열린 파일의 위치(offset)를 position만큼 이동 */
 }
 
 unsigned
 tell (int fd) 
 {
-  
+  struct file *f = process_get_file(fd); /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+
+	if(f != NULL) return file_tell(f); /* 해당 열린 파일의 위치를 반환 */
+  return 0; 
 }
 
 void
 close (int fd)
 {
- 
+  struct file *f;
+
+	if(f = process_get_file(fd)) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+		file_close(f);      /* 해당하는 파일을 닫음 */
+		thread_current()->fd_table[fd] = NULL; /* 파일 디스크립터 엔트리 초기화 */
+	}
 }
 
 static void
@@ -146,7 +164,6 @@ syscall_handler (struct intr_frame *f )
   int argv[3];
   if (!check_address(f->esp)) sys_exit(-1);
 
-  
   switch (*(uint32_t *)(f->esp)) {
     case SYS_HALT: halt();
       break;
@@ -167,10 +184,16 @@ syscall_handler (struct intr_frame *f )
       f->eax = create((const char*)argv[0], (unsigned)argv[1]);
       break;
     case SYS_REMOVE:
+      get_argument(f->esp + 4, &argv[0], 1);
+		  f->eax=remove((const char *)argv[0]);
       break;
     case SYS_OPEN:
+      get_argument(f->esp + 4, &argv[0], 1);
+      f->eax = open((const char *)argv[0]);
       break;
     case SYS_FILESIZE:
+      get_argument(f->esp + 4, &argv[0], 1);
+		  f->eax = filesize(argv[0]);
       break;
     case SYS_READ:
       get_argument(f->esp + 4, &argv[0], 3);
@@ -181,10 +204,16 @@ syscall_handler (struct intr_frame *f )
       f->eax = write((int)argv[0], (const void*)argv[1], (unsigned)argv[2]);
       break;
     case SYS_SEEK:
+      get_argument(f->esp + 4, &argv[0], 2);
+		  seek(argv[0],(unsigned)argv[1]);
       break;
     case SYS_TELL:
+      get_argument(f->esp + 4, &argv[0], 1);
+		  f->eax = tell(argv[0]);
       break;
     case SYS_CLOSE:
+      get_argument(f->esp + 4, &argv[0], 1);
+		  close(argv[0]);
       break;
     default :
       sys_exit(-1);

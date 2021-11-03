@@ -180,6 +180,7 @@ process_wait (tid_t child_tid)
 {
   struct thread *parent = thread_current();
   struct thread *child;
+  
   int status;
   struct list_elem *ele;
   if (!(child = get_child_process(child_tid))) return -1;
@@ -198,15 +199,18 @@ process_wait (tid_t child_tid)
   }
   return -1;
   /*
+  int exit;
   sema_down(&child->sema_exit);
   list_remove(&child->child_elem);
-  int exit = child->exit_status;
-  palloc_free_page(child);
+  exit = child->exit_status;
+  // palloc_free_page(child);
+  remove_child_process(child);
 
   return exit;*/
 
 
 }
+
 
 /* Free the current process's resources. */
 void
@@ -214,6 +218,12 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  int i;
+  for(i = 2; i < cur->fd_nxt; i++) /* 파일 디스크립터 테이블의 최대값을 이용해 파일 디스크립터의 최소값인 2가 될 때까지 파일을 닫음 */
+	  process_close_file(i);
+  
+  palloc_free_page(cur->fd_table); /* 파일 디스크립터 테이블 메모리 해제 */
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -605,6 +615,35 @@ void remove_child_process(struct thread *cp)
 		list_remove(&(cp->child_elem));  /* 자식 리스트에서 제거*/
 		palloc_free_page(cp);           /* 프로세스 디스크립터 메모리 해제 */
 	}
+}
 
+int process_add_file (struct file *f)
+{
+  int fd = thread_current()->fd_nxt;
 
+  thread_current()->fd_table[fd] = f; /* 파일 객체를 파일 디스크립터 테이블에 추가*/
+  thread_current()->fd_nxt++; /* 파일 디스크립터의 최대값 1 증가 */
+
+  return fd;  /* 파일 디스크립터 리턴 */
+}
+
+struct file *process_get_file(int fd)
+{
+  struct file *f;
+
+  if(fd < thread_current()->fd_nxt) {
+		f = thread_current()->fd_table[fd]; /* 파일 디스크립터에 해당하는 파일 객체를 리턴 */
+		return f;
+	}
+	return NULL; /* 없을 시 NULL 리턴 */
+}
+
+void process_close_file(int fd)
+{
+	struct file *f;
+
+	if(f = process_get_file(fd)) {
+		file_close(f);
+		thread_current()->fd_table[fd] = NULL;
+	}
 }
