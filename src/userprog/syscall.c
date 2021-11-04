@@ -94,10 +94,12 @@ open (const char *file)
   int fd;
 	struct file *f;
 
+  if (file == NULL) exit(-1);
+  check_address(file);
   f = filesys_open(file); /* 파일을 open */
   if (strcmp(thread_current()->name, file) == 0) file_deny_write(f);  /*ROX TEST*/
   
-	if(f) { 
+	if(f != NULL) { 
 		fd = process_add_file(f);  /* 해당 파일 객체에 파일 디스크립터 부여 */
 		return fd;                        /* 파일 디스크립터 리턴 */
 	}
