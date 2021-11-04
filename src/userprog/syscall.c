@@ -13,17 +13,17 @@ struct lock lock_file;
 
 bool check_address (void *addr)
 {
-  // if(is_user_vaddr(addr)) {
-  //   printf("yes it's valid\n");
-  //   return true;
-  // }
-  // else {
-  //   printf("yes it's invalid\n");
-  //   return false;
-  // }
+  if(is_user_vaddr(addr)) {
+    // printf("yes it's valid\n");
+    return true;
+  }
+  else {
+    // printf("yes it's invalid\n");
+    return false;
+  }
 
-  if (addr >= 0x8048000 && addr < 0xc0000000 && addr != 0) return true;
-  else return false;
+  // if (addr >= 0x8048000 && addr < 0xc0000000 && addr != 0) return true;
+  // else return false;
 }
 
 void get_argument(void *esp, int *arg, int count){
@@ -57,16 +57,16 @@ exit (int status) {
 pid_t
 exec (const char *file)
 {
-  pid_t pid = process_execute(file);
-  /*if (pid == -1) return -1;
+  struct thread *child;
+	pid_t pid = process_execute(file);
+	child = get_child_process(pid);
 
-  struct thread* child = get_child_process(pid);
-  if (!child) return -1;
-  else {
-    if (!child->isLoad) return -1;
-  }*//*Changed*/
-
-  return pid;
+  // if(child) {
+  //   sema_down(&(child->sema_load));      
+  //   if(!child->isLoad) return -1;
+  // }
+	
+	return pid;
 }
 
 int
@@ -94,7 +94,10 @@ open (const char *file)
   int fd;
 	struct file *f;
 
-	if(f = filesys_open(file)) { /* 파일을 open */
+  f = filesys_open(file); /* 파일을 open */
+  if (strcmp(thread_current()->name, file) == 0) file_deny_write(f);  /*ROX TEST*/
+  
+	if(f) { 
 		fd = process_add_file(f);  /* 해당 파일 객체에 파일 디스크립터 부여 */
 		return fd;                        /* 파일 디스크립터 리턴 */
 	}

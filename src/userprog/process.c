@@ -20,6 +20,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+struct lock lock_file;
 
 void construct_esp(char *file_name, void **esp) {
 
@@ -222,6 +223,11 @@ process_exit (void)
   int i;
   for(i = 2; i < cur->fd_nxt; i++) /* 파일 디스크립터 테이블의 최대값을 이용해 파일 디스크립터의 최소값인 2가 될 때까지 파일을 닫음 */
 	  process_close_file(i);
+
+  // if(cur->file_run){
+  //   process_close_file(cur->file_run);
+  //   cur->file_run = NULL;
+  // }
   
   palloc_free_page(cur->fd_table); /* 파일 디스크립터 테이블 메모리 해제 */
 
@@ -350,13 +356,21 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  lock_acquire(&lock_file); /* TODO : 락 획득 */
   /* Open executable file. */
   file = filesys_open (file_name);
   if (file == NULL) 
     {
+      lock_release(&lock_file);/* TODO : 락 해제 */
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+  
+  t->file_run = file;    /* thread 구조체의 run_file을 현재 실행할 파일로 초기화 */
+  file_deny_write(file);  /* file_deny_write()를 이용하여 파일에 대한 write를 거부 */
+
+  lock_release(&lock_file);/* TODO : 락 해제 */
+
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
