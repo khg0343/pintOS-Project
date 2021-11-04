@@ -121,7 +121,8 @@ read (int fd, void *buffer, unsigned size)
 {
   int read_size = 0;
 	struct file *f;
-    
+  if(!check_address(buffer))
+    exit(-1);
 	lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
 	if(fd == 0) {   /* 파일 디스크립터가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
