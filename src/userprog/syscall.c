@@ -120,9 +120,7 @@ int
 read (int fd, void *buffer, unsigned size)
 {
   int read_size = 0;
-
 	struct file *f;
-	char *read_buffer = (char *)buffer;
     
 	lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 

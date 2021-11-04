@@ -110,6 +110,7 @@ process_execute (const char *file_name)
     return -1;
   }/*Changed*/
   tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
+  // sema_down(&thread_current()->sema_load); /*Sync Test*/
   palloc_free_page(fn_copy_2);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
@@ -130,7 +131,7 @@ start_process (void *file_name_)
   char* cmd_name; // 4KB
   char *remain;
   strlcpy(fn_copy_1,file_name,PGSIZE);
-  //parse_filename(file_name, cmd_name);
+
   cmd_name = strtok_r(fn_copy_1," ",&remain);
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -142,8 +143,7 @@ start_process (void *file_name_)
   if(success){
     construct_esp(file_name, &if_.esp);
   }
-  //printf("Checking Memory\n");
-  //hex_dump(if_.esp, if_.esp, PHYS_BASE - if_.esp,true);
+
   palloc_free_page(fn_copy_1);
 
   /* If load failed, quit. */
@@ -192,9 +192,8 @@ process_wait (tid_t child_tid)
     {
       sema_down(&child->sema_exit);
       status = child->exit_status;
-      list_remove(&(child->child_elem));
       sema_up(&(child->sema_load));
-      palloc_free_page(child);
+      remove_child_process(child);
       return status;
     }/*Changed*/
   }

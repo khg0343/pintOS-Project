@@ -203,6 +203,7 @@ thread_create (const char *name, int priority,
     t->parent = thread_current(); /* TODO1 : 부모 프로세스 저장 */
     sema_init(&(t->sema_exit), 0); /* exit 세마포어 0으로 초기화 */
     sema_init(&(t->sema_load), 0); /* load 세마포어 0으로 초기화 */
+    // sema_init(&(t->sema_wait), 0); /* wait 세마포어 0으로 초기화 */
     t->isExit = false; /* 프로세스가 종료되지 않음 */
     t->isLoad = false; /* 프로그램이 로드되지 않음 */
     list_push_back(&(running_thread()->child_list), &(t->child_elem));/* TODO2 : 자식 리스트에 추가 */

@@ -105,6 +105,7 @@ struct thread
     bool isExit;/* 프로세스가 종료 유무 확인 */
     struct semaphore sema_exit;/* exit 세마포어 */
     struct semaphore sema_load;/* load 세마포어 */
+   //  struct semaphore sema_wait;/* wait 세마포어 */
     int exit_status;/* exit 호출 시 종료 status */
 
     struct file **fd_table; /* 파일 디스크립터 테이블 */
