@@ -1,15 +1,16 @@
 #ifndef USERPROG_SYSCALL_H
 #define USERPROG_SYSCALL_H
 
+#include <stdbool.h>
 typedef int pid_t;
 
 void syscall_init (void);
 void halt (void);
-void sys_exit (int status);
+void exit (int status);
 pid_t exec (const char *cmd_lime);
 int wait (pid_t pid);
-// bool create (const char *file, unsigned initial_size);
-// bool remove (const char *file);
+bool create (const char *file, unsigned initial_size);
+bool remove (const char *file);
 int open (const char *file);
 int filesize (int fd);
 int read (int fd, void *buffer, unsigned size);

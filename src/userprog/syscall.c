@@ -6,8 +6,10 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "filesys/filesys.h"
+#include "filesys/file.h"
 
 static void syscall_handler (struct intr_frame *);
+struct lock lock_file;
 
 bool check_address (void *addr)
 {
@@ -27,7 +29,7 @@ bool check_address (void *addr)
 void get_argument(void *esp, int *arg, int count){
   int i;
   for(i = 0; i < count; i ++){
-    if(!check_address(esp + 4*i)) sys_exit(-1);
+    if(!check_address(esp + 4*i)) exit(-1);
     arg[i] = *(int *)(esp + 4*i);
   }
 }
@@ -36,6 +38,7 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init(&lock_file);
 }
 
 void
@@ -45,7 +48,7 @@ halt (void)
 }
 
 void
-sys_exit (int status) {
+exit (int status) {
   printf("%s: exit(%d)\n", thread_name(), status);
   thread_current()->exit_status = status;
   thread_exit ();
@@ -75,7 +78,7 @@ wait (pid_t pid)
 bool
 create (const char *file, unsigned initial_size)
 {
-  if(file == NULL) sys_exit(-1);
+  if(file == NULL) exit(-1);
   return filesys_create(file, initial_size);
 }
 
@@ -111,23 +114,48 @@ filesize (int fd)
 int
 read (int fd, void *buffer, unsigned size)
 {
-  int i;
-  if (fd == 0) {
-    for (i = 0; i < size; i ++) {
-      if (((char *)buffer)[i] == '\0') break;
+  int read_size = 0;
+
+	struct file *f;
+	char *read_buffer = (char *)buffer;
+    
+	lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
+
+	if(fd == 0) {   /* 파일 디스크립터가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
+    int i;
+    for(i = 0; i < size; i++) {
+       if (((char *)buffer)[i] == '\0') break;
     }
-  }
-  return i;
+    read_size = i;
+	} else {
+		if(f = process_get_file(fd)) 
+      read_size = file_read(f,buffer,size);  /* 파일 디스크립터가 0이 아닐 경우 파일의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
+	}
+
+	lock_release(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
+
+	return read_size;
 }
 
 int
 write (int fd, const void *buffer, unsigned size)
 {
-  if (fd == 1) {
-    putbuf(buffer, size);
-    return size;
-  }
-  return -1; 
+  int write_size = 0;
+	struct file *f;
+
+	lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
+
+	if(fd == 1) { /* 파일 디스크립터가 1일 경우(STDOUT) 버퍼에 저장된 값을 화면에 출력후 버퍼의 크기 리턴 (putbuf() 이용) */
+		putbuf(buffer, size);
+		write_size = size;
+	} else {    /* 파일 디스크립터가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 파일에 기록후 기록한 바이트 수를 리턴 */
+		if(f = process_get_file(fd))
+			write_size = file_write(f,(const void *)buffer, size);
+	}
+
+	lock_release(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
+
+	return write_size;
 }
 
 void
@@ -162,14 +190,14 @@ static void
 syscall_handler (struct intr_frame *f ) 
 {
   int argv[3];
-  if (!check_address(f->esp)) sys_exit(-1);
+  if (!check_address(f->esp)) exit(-1);
 
   switch (*(uint32_t *)(f->esp)) {
     case SYS_HALT: halt();
       break;
     case SYS_EXIT: 
       get_argument(f->esp + 4, &argv[0], 1);
-      sys_exit((int)argv[0]);
+      exit((int)argv[0]);
       break;
     case SYS_EXEC:
       get_argument(f->esp + 4, &argv[0], 1);
@@ -216,6 +244,6 @@ syscall_handler (struct intr_frame *f )
 		  close(argv[0]);
       break;
     default :
-      sys_exit(-1);
+      exit(-1);
   }
 }
