@@ -13,17 +13,8 @@ struct lock lock_file;
 
 bool check_address (void *addr)
 {
-  if(is_user_vaddr(addr)) {
-    // printf("yes it's valid\n");
-    return true;
-  }
-  else {
-    // printf("yes it's invalid\n");
-    return false;
-  }
-
-  // if (addr >= 0x8048000 && addr < 0xc0000000 && addr != 0) return true;
-  // else return false;
+  if(is_user_vaddr(addr)) return true;
+  else return false;
 }
 
 void get_argument(void *esp, int *arg, int count){
@@ -59,17 +50,11 @@ exec (const char *file)
 {
   struct thread *child;
 	pid_t pid = process_execute(file);
-  if(pid==-1)
-    return -1;
+  if(pid==-1)  return -1;
 	child = get_child_process(pid);
-  if(!child)
-    return -1;
-  // if(child) {
-  //   sema_down(&(child->sema_load));      
-  //   if(!child->isLoad) return -1;
-  // }
-	
-	return pid;
+  sema_down(&(child->sema_load));      
+	if(child->isLoad) return pid;
+	else		return -1;
 }
 
 int
@@ -98,14 +83,17 @@ open (const char *file)
 	struct file *f;
 
   if (file == NULL) exit(-1);
-  check_address(file);
+
+  lock_acquire(&lock_file); 
   f = filesys_open(file); /* 파일을 open */
   if (strcmp(thread_current()->name, file) == 0) file_deny_write(f);  /*ROX TEST*/
   
 	if(f != NULL) { 
-		fd = process_add_file(f);  /* 해당 파일 객체에 파일 디스크립터 부여 */
+		fd = process_add_file(f);     /* 해당 파일 객체에 파일 디스크립터 부여 */
+    lock_release(&lock_file);
 		return fd;                        /* 파일 디스크립터 리턴 */
 	}
+  lock_release(&lock_file);
 	return -1; /* 해당 파일이 존재하지 않으면 -1 리턴 */
 }
 
@@ -113,7 +101,7 @@ int
 filesize (int fd) 
 {
 	struct file *f;
-	if(f = process_get_file(fd)) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+	if((f = process_get_file(fd))) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
 		return file_length(f); /* 해당 파일의 길이를 리턴 */
 	}
 	return -1;  /* 해당 파일이 존재하지 않으면 -1 리턴 */
@@ -126,16 +114,17 @@ read (int fd, void *buffer, unsigned size)
 	struct file *f;
   if(!check_address(buffer))
     exit(-1);
+    
 	lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
 	if(fd == 0) {   /* 파일 디스크립터가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
-    int i;
+    unsigned int i;
     for(i = 0; i < size; i++) {
        if (((char *)buffer)[i] == '\0') break;
     }
     read_size = i;
 	} else {
-		if(f = process_get_file(fd)) 
+		if((f = process_get_file(fd))) 
       read_size = file_read(f,buffer,size);  /* 파일 디스크립터가 0이 아닐 경우 파일의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
 	}
 
@@ -156,7 +145,7 @@ write (int fd, const void *buffer, unsigned size)
 		putbuf(buffer, size);
 		write_size = size;
 	} else {    /* 파일 디스크립터가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 파일에 기록후 기록한 바이트 수를 리턴 */
-		if(f = process_get_file(fd))
+		if((f = process_get_file(fd)))
 			write_size = file_write(f,(const void *)buffer, size);
 	}
 
@@ -187,7 +176,7 @@ close (int fd)
 {
   struct file *f;
 
-	if(f = process_get_file(fd)) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+	if((f = process_get_file(fd))) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
 		file_close(f);      /* 해당하는 파일을 닫음 */
 		thread_current()->fd_table[fd] = NULL; /* 파일 디스크립터 엔트리 초기화 */
 	}

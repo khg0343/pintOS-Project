@@ -91,31 +91,42 @@ void construct_esp(char *file_name, void **esp) {
 tid_t
 process_execute (const char *file_name) 
 { 
-  char *fn_copy;
   tid_t tid;
+  char *fn_copy_1;
+  char *fn_copy_2;
+  char *name;
+  char *remain;
+  struct thread* child;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
+  fn_copy_1 = palloc_get_page(PAL_ZERO);
+  fn_copy_2 = palloc_get_page(PAL_ZERO);
+  if (fn_copy_1 == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
-  char *fn_copy_2 = palloc_get_page(0);
+  strlcpy(fn_copy_1,file_name,PGSIZE);
   strlcpy(fn_copy_2,file_name,PGSIZE);
-  char *name;
-  char *remain;
+
   name = strtok_r(fn_copy_2," ",&remain);
   /* Create a new thread to execute FILE_NAME. */
   if (filesys_open(name) == NULL) {
     return -1;
-  }/*Changed*/
-  tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
-  struct thread* tmp;
-  tmp = get_child_process(tid);
-  sema_down(&tmp->sema_load); /*Sync Test*/
+  }
+
+  tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy_1);
+
   palloc_free_page(fn_copy_2);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    palloc_free_page (fn_copy_1); 
+
+  struct list_elem *e;
+  // struct thread *child;
+  for(e = list_begin(&thread_current()->child_list);e!= list_end(&thread_current()->child_list);e=list_next(e))
+  {
+    child = list_entry(e, struct thread, child_elem);
+    if(child->exit_status == -1)
+      return process_wait(tid);
+  }
 
   return tid;
 }
@@ -129,35 +140,35 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
-  char* fn_copy_1 = palloc_get_page(0);
+  char* fn_copy = palloc_get_page(0);
   char* cmd_name; // 4KB
   char *remain;
-  strlcpy(fn_copy_1,file_name,PGSIZE);
+  strlcpy(fn_copy,file_name,PGSIZE);
 
-  cmd_name = strtok_r(fn_copy_1," ",&remain);
+  cmd_name = strtok_r(fn_copy," ",&remain);
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (cmd_name, &if_.eip, &if_.esp);
-  //printf("value of success : %d\n",success);
+
+  thread_current()->isLoad = success;
   if(success){
     construct_esp(file_name, &if_.esp);
   }
+  sema_up(&thread_current()->sema_load);
 
-  palloc_free_page(fn_copy_1);
+  palloc_free_page(fn_copy);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
 
-  thread_current()->isLoad = success;
-  sema_up(&thread_current()->sema_load);
   if (!success) {
     thread_exit ();
+    // exit(-1);
   }
     
-
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -185,32 +196,21 @@ process_wait (tid_t child_tid)
   struct thread *child;
   
   int status;
-  struct list_elem *ele;
+  struct list_elem *e;
   if (!(child = get_child_process(child_tid))) return -1;
-  for(ele = list_begin(&parent->child_list);ele!=list_end(&parent->child_list);ele=list_next(ele))
+  for(e = list_begin(&parent->child_list);e!=list_end(&parent->child_list);e=list_next(e))
   {
-    child = list_entry(ele,struct thread, child_elem);
-    if(child_tid == child ->tid)
+    child = list_entry(e,struct thread, child_elem);
+    if(child_tid == child->tid)
     {
-      sema_down(&child->sema_wait);
+      sema_down(&child->sema_exit);
       status = child->exit_status;
-      //sema_up(&(child->sema_load));
       remove_child_process(child);
+
       return status;
-    }/*Changed*/
+    }
   }
   return -1;
-  /*
-  int exit;
-  sema_down(&child->sema_exit);
-  list_remove(&child->child_elem);
-  exit = child->exit_status;
-  // palloc_free_page(child);
-  remove_child_process(child);
-
-  return exit;*/
-
-
 }
 
 
@@ -224,11 +224,6 @@ process_exit (void)
   int i;
   for(i = 2; i < cur->fd_nxt; i++) /* 파일 디스크립터 테이블의 최대값을 이용해 파일 디스크립터의 최소값인 2가 될 때까지 파일을 닫음 */
 	  process_close_file(i);
-
-  // if(cur->file_run){
-  //   process_close_file(cur->file_run);
-  //   cur->file_run = NULL;
-  // }
   
   palloc_free_page(cur->fd_table); /* 파일 디스크립터 테이블 메모리 해제 */
 
@@ -248,8 +243,6 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-    sema_up(&cur->sema_wait);
-    //sema_down(&cur->sema_load);/*Changed*/
 }
 
 /* Sets up the CPU for running user code in the current
@@ -357,12 +350,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
-  lock_acquire(&lock_file); /* TODO : 락 획득 */
+  lock_acquire(&lock_file); /* 락 획득 */
   /* Open executable file. */
   file = filesys_open (file_name);
   if (file == NULL) 
     {
-      lock_release(&lock_file);/* TODO : 락 해제 */
+      lock_release(&lock_file);/* 락 해제 */
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
@@ -370,7 +363,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   t->file_run = file;    /* thread 구조체의 run_file을 현재 실행할 파일로 초기화 */
   file_deny_write(file);  /* file_deny_write()를 이용하여 파일에 대한 write를 거부 */
 
-  lock_release(&lock_file);/* TODO : 락 해제 */
+  lock_release(&lock_file);/* 락 해제 */
 
 
   /* Read and verify executable header. */
@@ -657,7 +650,7 @@ void process_close_file(int fd)
 {
 	struct file *f;
 
-	if(f = process_get_file(fd)) {
+	if((f = process_get_file(fd))) {
 		file_close(f);
 		thread_current()->fd_table[fd] = NULL;
 	}
