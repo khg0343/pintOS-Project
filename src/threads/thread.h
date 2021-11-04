@@ -103,7 +103,7 @@ struct thread
     struct list child_list;/* 자식 리스트 */
     bool isLoad;/* 프로세스의 프로그램 메모리 적재 유무 */
     bool isExit;/* 프로세스가 종료 유무 확인 */
-    struct semaphore sema_exit;/* exit 세마포어 */
+    struct semaphore sema_wait;/* exit 세마포어 */
     struct semaphore sema_load;/* load 세마포어 */
    //  struct semaphore sema_wait;/* wait 세마포어 */
     int exit_status;/* exit 호출 시 종료 status */

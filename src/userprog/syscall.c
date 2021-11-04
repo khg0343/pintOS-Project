@@ -59,8 +59,11 @@ exec (const char *file)
 {
   struct thread *child;
 	pid_t pid = process_execute(file);
+  if(pid==-1)
+    return -1;
 	child = get_child_process(pid);
-
+  if(!child)
+    return -1;
   // if(child) {
   //   sema_down(&(child->sema_load));      
   //   if(!child->isLoad) return -1;

@@ -110,7 +110,9 @@ process_execute (const char *file_name)
     return -1;
   }/*Changed*/
   tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
-  // sema_down(&thread_current()->sema_load); /*Sync Test*/
+  struct thread* tmp;
+  tmp = get_child_process(tid);
+  sema_down(&tmp->sema_load); /*Sync Test*/
   palloc_free_page(fn_copy_2);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
@@ -190,9 +192,9 @@ process_wait (tid_t child_tid)
     child = list_entry(ele,struct thread, child_elem);
     if(child_tid == child ->tid)
     {
-      sema_down(&child->sema_exit);
+      sema_down(&child->sema_wait);
       status = child->exit_status;
-      sema_up(&(child->sema_load));
+      //sema_up(&(child->sema_load));
       remove_child_process(child);
       return status;
     }/*Changed*/
@@ -246,8 +248,8 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-    sema_up(&cur->sema_exit);
-    sema_down(&cur->sema_load);/*Changed*/
+    sema_up(&cur->sema_wait);
+    //sema_down(&cur->sema_load);/*Changed*/
 }
 
 /* Sets up the CPU for running user code in the current

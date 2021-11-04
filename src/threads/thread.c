@@ -201,7 +201,7 @@ thread_create (const char *name, int priority,
   #ifdef USERPROG
     /*TODO*/
     t->parent = thread_current(); /* TODO1 : 부모 프로세스 저장 */
-    sema_init(&(t->sema_exit), 0); /* exit 세마포어 0으로 초기화 */
+    sema_init(&(t->sema_wait), 0); /* exit 세마포어 0으로 초기화 */
     sema_init(&(t->sema_load), 0); /* load 세마포어 0으로 초기화 */
     // sema_init(&(t->sema_wait), 0); /* wait 세마포어 0으로 초기화 */
     t->isExit = false; /* 프로세스가 종료되지 않음 */
@@ -308,7 +308,7 @@ thread_exit (void)
   intr_disable ();
   list_remove (&thread_current()->allelem);
   thread_current()->isExit = true;/* 프로세스 디스크립터에 프로세스 종료를 알림 */
-  sema_up(&thread_current()->sema_exit);/* 부모프로세스의 대기 상태 이탈(세마포어 이용) */
+  sema_up(&thread_current()->sema_wait);/* 부모프로세스의 대기 상태 이탈(세마포어 이용) */
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
