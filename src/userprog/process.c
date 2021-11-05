@@ -24,52 +24,52 @@ struct lock lock_file;
 
 void construct_esp(char *file_name, void **esp) {
 
-  char ** argv;
   int argc;
-  int total_len;
-  char stored_file_name[256];
+  char ** argv;
+  char *name;
   char *token;
-  char *last;
+  char *remain;
   int i;
   int len;
   
-  strlcpy(stored_file_name, file_name, strlen(file_name) + 1);
-  token = strtok_r(stored_file_name, " ", &last);
+  name = palloc_get_page(PAL_ZERO);
+
   argc = 0;
-  /* calculate argc */
-  while (token != NULL) {
-    argc += 1;
-    token = strtok_r(NULL, " ", &last);
+  strlcpy(name, file_name, strlen(file_name) + 1);
+  for(token = strtok_r(name, " ", &remain); token != NULL; token = strtok_r(NULL, " ", &remain)){
+    if(*token != " ")
+      argc++;
   }
-  argv = (char **)malloc(sizeof(char *) * argc);
-  /* store argv */
-  strlcpy(stored_file_name, file_name, strlen(file_name) + 1);
-  for (i = 0, token = strtok_r(stored_file_name, " ", &last); i < argc; i++, token = strtok_r(NULL, " ", &last)) {
+
+  i = 0;
+  argv = (char **)palloc_get_page(PAL_ZERO);
+  strlcpy(name, file_name, strlen(file_name) + 1);
+  for (token = strtok_r(name, " ", &remain); i < argc; token = strtok_r(NULL, " ", &remain)) {
     len = strlen(token);
-    argv[i] = token;
-
+    argv[i++] = token;
   }
 
-  /* push argv[argc-1] ~ argv[0] */
-  total_len = 0;
-  for (i = argc - 1; 0 <= i; i --) {
+  for (i = argc - 1; i >= 0; i--) {
     len = strlen(argv[i]);
     *esp -= len + 1;
-    total_len += len + 1;
     strlcpy(*esp, argv[i], len + 1);
     argv[i] = *esp;
   }
-  /* push word align */
-  *esp -= total_len % 4 != 0 ? 4 - (total_len % 4) : 0;
-  /* push NULL */
+
+  /* push word alignment */
+  *esp -= ((uint32_t)*esp) % 4;
+  
+  /* push null */
   *esp -= 4;
   **(uint32_t **)esp = 0;
-  /* push address of argv[argc-1] ~ argv[0] */
-  for (i = argc - 1; 0 <= i; i--) {
+  
+  /* push argv[i] */
+  for (i = argc - 1; i >= 0; i--) {
     *esp -= 4;
     **(uint32_t **)esp = argv[i];
   }
-  /* push address of argv */
+  
+  /* push argv */
   *esp -= 4;
   **(uint32_t **)esp = *esp + 4;
 
@@ -81,7 +81,8 @@ void construct_esp(char *file_name, void **esp) {
   *esp -= 4;
   **(uint32_t **)esp = 0;
 
-  free(argv);
+  palloc_free_page(name);
+  palloc_free_page(argv);
 }
 
 /* Starts a new thread running a user program loaded from
@@ -140,7 +141,7 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
-  char* fn_copy = palloc_get_page(0);
+  char* fn_copy = palloc_get_page(PAL_ZERO);
   char* cmd_name; // 4KB
   char *remain;
   strlcpy(fn_copy,file_name,PGSIZE);
@@ -160,13 +161,10 @@ start_process (void *file_name_)
   sema_up(&thread_current()->sema_load);
 
   palloc_free_page(fn_copy);
-
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
+  palloc_free_page(file_name);
 
   if (!success) {
     thread_exit ();
-    // exit(-1);
   }
     
   /* Start the user process by simulating a return from an
@@ -650,8 +648,9 @@ void process_close_file(int fd)
 {
 	struct file *f;
 
-	if((f = process_get_file(fd))) {
+	if((f = process_get_file(fd))) {  /* 파일 디스크립터에 해당하는 파일을 닫음 */
 		file_close(f);
-		thread_current()->fd_table[fd] = NULL;
+		thread_current()->fd_table[fd] = NULL;  /* 파일 디스크립터 테이블 해당 엔트리 초기화 */
+
 	}
 }
