@@ -148,7 +148,7 @@ bffffff0  fe ff ff bf 00 00 00 00-00 65 63 68 6f 00 78 00 |.........echo.x.|
 </br></br></br></br></br></br></br></br></br></br></br></br>
 </br></br></br></br></br></br></br></br></br></br></br></br>
 
-# **II. Implementation of Priority Scheduling**
+# **II. Implementation of System Calls**
 
 ## **Analysis**
 
@@ -190,84 +190,450 @@ Scheduling시에 Priority를 고려하여 ready_list에 넣는다. 또한, threa
 
 ## **Implementation**
 
--Scheduling시 ready_list에 넣는 과정이 있는 method들에, list_push_back 대신 list_insert_ordered 사용하여 element를 list에 넣도록 구현하였다.
+- thread에 새로운 변수들을 추가하였다.
 ```cpp
-void thread_unblock (struct thread *t) 
+/*threads/thread.h*/
+struct thread
 {
-    enum intr_level old_level;
-    ASSERT (is_thread (t));
-    old_level = intr_disable ();
-    ASSERT (t->status == THREAD_BLOCKED);
-    list_insert_ordered(&ready_list, &t->elem, thread_comparepriority, NULL);
-    //list_push_back (&ready_list, &t->elem);
-    t->status = THREAD_READY;
-    intr_set_level (old_level);
-}
-void thread_yield (void) 
+    ... 
+    #ifdef USERPROG
+        /* Owned by userprog/process.c. */
+        uint32_t *pagedir;                  /* Page directory. */
+
+        struct thread *parent; /* 부모 process의 descriptor */
+        struct list_elem child_elem; /* child 리스트 element */
+        struct list child_list;/* child 리스트 */
+        bool isLoad;/* process의 프로그램 메모리 load 유무 */
+        bool isExit;/* process가 종료 유무 확인 */
+        struct semaphore sema_exit;/* exit 세마포어 */
+        struct semaphore sema_load;/* load 세마포어 */
+        int exit_status;/* exit 호출 시 종료 status */
+
+        struct file **fd_table; /* file descriptor 테이블 */
+        int fd_nxt;             /* 현재 테이블에 존재하는 fd값의 최대값 + 1 */
+
+        struct file *file_run;   /* 현재 실행중인 file 추가 */
+    #endif
+    ...
+};
+
+/*threads/thread.c*/
+tid_t
+thread_create (const char *name, int priority,
+               thread_func *function, void *aux) 
 {
-    struct thread *cur = thread_current ();
-    enum intr_level old_level;
-    ASSERT (!intr_context ());
-    old_level = intr_disable ();
-    if (cur != idle_thread)
-        list_insert_ordered(&ready_list, &cur->elem, thread_comparepriority, NULL); // 0924
-        //list_push_back (&ready_list, &cur->elem);
-    cur->status = THREAD_READY;
-    schedule ();
-    intr_set_level (old_level);
+  ...
+
+  #ifdef USERPROG
+    t->parent = thread_current(); /* 부모 process 저장 */
+    sema_init(&(t->sema_exit), 0); /* exit 세마포어 0으로 초기화 */
+    sema_init(&(t->sema_load), 0); /* load 세마포어 0으로 초기화 */
+    t->isExit = false; /* process가 종료되지 않음 */
+    t->isLoad = false; /* 프로그램이 로드되지 않음 */
+    list_push_back(&(running_thread()->child_list), &(t->child_elem));/* child 리스트에 추가 */
+
+    t->fd_nxt = 2;/* fd 값 초기화(0,1은 표준 입력,출력) */
+    t->fd_table = palloc_get_page(PAL_ZERO); /* File Descriptor 테이블에 메모리 할당 */
+    if(t->fd_table == NULL) return TID_ERROR;
+  #endif
+  ...
 }
 ```
+> parent : </br>
+> child_elem : </br>
+> child_list : </br>
+> isLoad : </br>
+> isExit: </br>
+> sema_exit : </br>
+> sema_load : </br>
+> exit_status : </br>
 
-> 기존에는 list_push_back으로 먼저 들어온 thread가 별도의 priority에 관한 순서 없이 실행이 되게 설계가 되어 있었는데, 이를 priority를 기준으로 정렬되게 list_insert_ordered로 대체하여 준다.
+> fd_table : </br>
+> fd_nxt: </br>
+> file_run : </br>
 
-- 이때, Alarm-clock에서 사용하였던 비교함수처럼 thread_comparepriority를 선언 및 정의하여 사용한다. 이 함수에 관한 내용은 뒤에 후술한다. 그 외 변경사항은 없다.
-
+### **Syscall Handler**
+- syscall handler에 필요한 함수들을 구현하였다.
 ```cpp
-bool thread_comparepriority(struct list_elem *thread_1, struct list_elem *thread_2, void *aux)
+bool check_address(void *addr)
 {
-    return list_entry(thread_1, struct thread, elem)->priority > list_entry(thread_2, struct thread, elem) -> priority;
+  if(is_user_vaddr(addr)) return true;
+  else return false;
 }
 ```
-
->전체적인 Logic은 비슷하나, priority가 큰 entry가 앞에 위치하여야 하기 때문에 부등호가 반대로 바뀌었다. 또한, 위에 서술한 동일한 이유로 등호는 붙이지 않는다.
+> 주소 값이 user 영역에서 사용하는 address 값인지 확인하는 함수이다. 즉, 유효한 주소인지 threads/vaddr.h의 is_user_vaddr함수를 사용하여 확인한 후 그 결과를 return한다.
+```cpp
+void get_argument(void *esp, int *arg, int count){
+  int i;
+  for(i = 0; i < count; i++){
+    if(!check_address(esp + 4*i)) exit(-1);
+    arg[i] = *(int *)(esp + 4*i);
+  }
+}
+```
+> user stack에 있는 인자들을 kernel에 저장하는 함수이다. argument를 esp에서 pop하여 arg에 저장한다. system call마다 요구하는 개수가 달라 이를 syscall handler에서 count값을 지정하여 호출하고, 이를 통해 저장된 값을 이용하여 system call을 수행한다.
 
 </br></br>
 
-- Priority를 고려하여 줄 상황이 2가지 더 존재한다. Priority를 재설정하거나, thread를 create하여 새로운 thread와 기존의 thread들 간의 prioirty를 비교해줄 필요가 있는 상황이다. thread_create와 thread_set_priority에서 나타나며, thread_compare()가 필요한 상황에 함수를 호출하였다.
+- 위의 함수들을 이용하여 syscall handler를 구현하였다.
 
 ```cpp
-void thread_set_priority (int new_priority) {
-    struct thread *thrd_cur = thread_current();
-    if(!thread_mlfqs){
-        thrd_cur->origin_priority = new_priority;
-        reset_priority(thrd_cur);
-        thread_compare(); // priority설정 후, priority에 따라 thread yield
+static void
+syscall_handler (struct intr_frame *f ) 
+{
+  int argv[3];
+  if (!check_address(f->esp)) exit(-1);
+
+  switch (*(uint32_t *)(f->esp)) {
+    case SYS_HALT: halt();
+      break;
+    case SYS_EXIT: 
+      get_argument(f->esp + 4, &argv[0], 1);
+      exit((int)argv[0]);
+      break;
+    case SYS_EXEC:
+      get_argument(f->esp + 4, &argv[0], 1);
+      f->eax = exec((const char*)argv[0]);
+      break;
+    case SYS_WAIT:
+      get_argument(f->esp + 4, &argv[0], 1);
+      f->eax = wait((pid_t)argv[0]);
+      break;
+    case SYS_CREATE:
+      get_argument(f->esp + 4, &argv[0], 2);
+      f->eax = create((const char*)argv[0], (unsigned)argv[1]);
+      break;
+    case SYS_REMOVE:
+      get_argument(f->esp + 4, &argv[0], 1);
+	  f->eax=remove((const char *)argv[0]);
+      break;
+    case SYS_OPEN:
+      get_argument(f->esp + 4, &argv[0], 1);
+      f->eax = open((const char *)argv[0]);
+      break;
+    case SYS_FILESIZE:
+      get_argument(f->esp + 4, &argv[0], 1);
+	  f->eax = filesize(argv[0]);
+      break;
+    case SYS_READ:
+      get_argument(f->esp + 4, &argv[0], 3);
+      f->eax = read((int)argv[0], (void*)argv[1], (unsigned)argv[2]);
+      break;
+    case SYS_WRITE:
+      get_argument(f->esp + 4, &argv[0], 3);
+      f->eax = write((int)argv[0], (const void*)argv[1], (unsigned)argv[2]);
+      break;
+    case SYS_SEEK:
+      get_argument(f->esp + 4, &argv[0], 2);
+	  seek(argv[0],(unsigned)argv[1]);
+      break;
+    case SYS_TELL:
+      get_argument(f->esp + 4, &argv[0], 1);
+	  f->eax = tell(argv[0]);
+      break;
+    case SYS_CLOSE:
+      get_argument(f->esp + 4, &argv[0], 1);
+	  close(argv[0]);
+      break;
+    default :
+      exit(-1);
+  }
+```
+> 각각의 syscall number에 맞게 switch문을 통해 syscall을 수행하도록 구현하였고, 주어진 number가 아닐 경우 exit(-1)을 호출하였다. system call마다 요구하는 argument를 get_argument 함수를 이용하여 stack에서 pop하고, return할 값이 있을 경우 stack에 다시 push하였다. 각각의 system call에 대한 부분은 아래에서 자세히 알아보도록 하자.
+
+#### **halt**
+```cpp
+void
+halt (void) 
+{
+  shutdown_power_off(); /* shutdown_power_off()를 사용하여 pintos 종료 */
+}
+```
+> pintos를 종료시키는 System Call이다. shutdown_power_off()를 이용하여 종료시킨다.
+
+#### **exit**
+```cpp
+void
+exit (int status) {
+  printf("%s: exit(%d)\n", thread_name(), status);  /* process 종료 메시지 출력, 출력 양식: “process name: exit status” */
+  thread_current()->exit_status = status;   
+  thread_exit ();   /* thread 종료 */
+}
+```
+> 현재 process를 종료시키는 System Call이다. Process Termination Message를 출력하고, 해당 thread의 종료시 status를 저장하는 exit_status에 status를 저장한 후 thread를 종료한다. </br>
+> Process Termination Message는 “process name: exit(status)”의 형태로 출력한다.
+
+```cpp
+/*threads/thread.c*/
+void
+thread_exit (void) 
+{
+  ...
+  #ifdef USERPROG
+    process_exit ();
+  #endif
+  ...
+  thread_current()->isExit = true; /* process descriptor에 process 종료를 알림 */
+  if(thread_current() != initial_thread){
+	  sema_up(&(thread_current()->sema_exit)); /* 부모 process의 대기 상태 이탈 */
+  }
+  ...
+}
+```
+> thread_exit()에서는 process_exit()를 통해 process를 종료시킨다. wait()에서 parent process는 child가 종료될 때까지 대기하게 되는데, 이때 sema_down해 뒀던 sema_exit이라는 semaphore를 sema_up하면서 대기하고 있던 부모 process에 child의 종료를 알린다.
+
+#### **exec**
+```cpp
+pid_t
+exec (const char *file)
+{
+  struct thread *child;
+	pid_t pid = process_execute(file);  /* process_execute() 함수를 호출하여 child process 생성 */
+  if(pid == -1)  return -1;
+	child = get_child_process(pid); /* 생성된 child process의 process descriptor를 검색 */
+  sema_down(&(child->sema_load));   /* child process의 프로그램이 load될 때까지 대기 */   
+	if(child->isLoad) return pid;   /* 프로그램 load 성공 시 child process의 pid 리턴 */ 
+	else		return -1;          /* 프로그램 load 실패 시 -1 리턴 */
+
+}
+```
+> child process를 생성하고 프로그램을 실행시키는 System Call이다. userprog/process.c의 process_execute()를 통해 child process를 생성하고, sema_load라는 semaphore를 이용하여 child process의 응용 프로그램이 load 될 때까지 대기한다. </br>
+> 프로그램 load 성공 시 생성된 process의 pid 값을 return, 실패 시 -1을 return한다.
+
+#### **wait**
+```cpp
+int
+wait (pid_t pid)
+{
+  return process_wait(pid); /* process_wait() 사용하여, child process가 종료 될 때까지 대기 */
+}
+```
+> child process가 모두 종료될 때까지 대기하는 System Call이다. userprog/process.c의 process_wait()를 통해 child_process의 종료까지 대기한다.
+
+```cpp
+/*userprog/process.c*/
+int
+process_wait (tid_t child_tid) 
+{
+  struct thread *parent = thread_current();
+  struct thread *child;
+  
+  int status;
+  struct list_elem *e;
+  if (!(child = get_child_process(child_tid))) return -1;
+  for(e = list_begin(&parent->child_list);e!=list_end(&parent->child_list);e=list_next(e))
+  {
+    child = list_entry(e,struct thread, child_elem);
+    if(child_tid == child->tid)
+    {
+      sema_down(&child->sema_exit);
+      status = child->exit_status;
+      remove_child_process(child);
+
+      return status;
     }
-}
-tid_t thread_create (const char *name, int priority, thread_func *function, void *aux) {
-    …
-    thread_unblock (t); // Thread 생성완료 직전, Unblock하여 Ready Queue에 넣는다.
-    thread_compare();
-    return tid;
+  }
+  return -1;
 }
 ```
+> TODO
 
->먼저, thread_set_priority를 보면 thread_compare()를 볼 수 있다. 위 2줄은 priority donation을 위한 code 구현으로 뒤에서 설명한다. 대략적으로 설명하면, 현재 thread의 priority를 재설정한다. 재설정 후에 기존 thread ready_list에 있는 thread가 재설정된 priority보다 크다면 바로 해당 thread에 yield해주어야 한다. 이는 thread_compare()에서 실행한다. 이 함수는 바로 뒤에 설명한다. Thread_create()도 같은 맥락으로 새로운 thread가 생성되었으므로 생성된 thread의 priority와 기존 thread들의 prioirity를 비교하여 생성된 thread의 priority가 더 크다면 바로 이 thread에 CPU를 내주어야 한다.
+#### **create**
+```cpp
+bool
+create (const char *file, unsigned initial_size)
+{
+  if(file == NULL) exit(-1);    
+  return filesys_create(file, initial_size); /* file 이름과 크기에 해당하는 file 생성 및 성공 여부 return */
+}
+```
+> file을 생성하는 System Call이다. 생성할 file의 이름과 크기에 대한 정보를 통해 filesys/filesys.c의 filesys_create함수를 이용하여 file을 생성하고, 성공 여부를 return한다. file이 null일 경우 exit을 통해 process를 종료한다.
 
-- 현재 thread와 ready_list의 top thread와 비교하여 ready_list에 있는 thread의 priority가 더 크다면 thread_yield를 호출 함수를 구현하였다.
+#### **remove**
+```cpp
+bool
+remove (const char *file)
+{
+  return filesys_remove(file);  /* file 이름에 해당하는 file을 제거 및 성공 여부 return*/
+}
+```
+> file을 삭제하는 System Call이다. 삭제할 file에 대한 정보를 통해 filesys/filesys.c의 filesys_remove함수를 이용하여 file을 삭제하고, 성공여부를 return한다.
+
+
+#### **open**
+```cpp
+int
+open (const char *file)
+{
+  int fd;
+	struct file *f;
+
+  if (file == NULL) exit(-1);
+
+  lock_acquire(&lock_file); 
+  f = filesys_open(file); /* file을 open */
+  if (strcmp(thread_current()->name, file) == 0) file_deny_write(f);  /*ROX TEST*/
+  
+	if(f != NULL) { 
+		fd = process_add_file(f);     /* 해당 file 객체에 file descriptor 부여 */
+    lock_release(&lock_file);
+		return fd;                        /* file descriptor 리턴 */
+	}
+  lock_release(&lock_file);
+	return -1; /* 해당 file이 존재하지 않으면 -1 리턴 */
+}
+```
+> TODO
 
 ```cpp
-void thread_compare() { //create될때랑 priority 재설정 할때.
-    if(!list_empty(&ready_list) && (thread_current()->priority < list_entry(list_front(&ready_list),struct thread, elem)->priority))
-        thread_yield();
+int process_add_file (struct file *f)
+{
+  int fd = thread_current()->fd_nxt;
+
+  thread_current()->fd_table[fd] = f; /* 파일 객체를 파일 디스크립터 테이블에 추가*/
+  thread_current()->fd_nxt++; /* 파일 디스크립터의 최대값 1 증가 */
+
+  return fd;  /* 파일 디스크립터 리턴 */
 }
 ```
+> TODO
 
->Thread_compare에서 현재 thread와 ready_list의 top thread와 비교하여 ready_list에 있는 thread의 priority가 더 크다면 thread_yield를 호출한다. 여기서 주의할 점은 thread_set_priority는 thread_current와 직접적으로 비교하는 것이어서 직관적으로 작동 흐름이 보이나, create의 경우 current를 지정하는 과정이 없어서 주의할 필요가 있다. Create의 경우 생성된 thread의 priority가 ready_list에 있는 thread들의 priority 중에서 가장 크다면 ready_list의 top에 저장될 것이다. 이는 thread_unblock에서 이루어진다. 이후, thread_compare()가 실행되고, create될 때 실행 되고 있는 thread와 create되어 넣어진 thread를 비교하여, create된 thread의 priority가 더 크다면 바로 CPU를 내어주는 Logic이다.
+#### **filesize**
+```cpp
+int
+filesize (int fd) 
+{
+	struct file *f;
+	if((f = process_get_file(fd))) { /* file descriptor를 이용하여 file 객체 검색 */
+		return file_length(f); /* 해당 file의 길이를 리턴 */
+	}
+	return -1;  /* 해당 file이 존재하지 않으면 -1 리턴 */
+}
 
-위 방법으로 thread의 priority를 고려하여 thread scheduling을 완성 할 수 있다.
+```
+> TODO : 설명
 
-# **III. Implementation of Priority Donation**
+```
+struct file *process_get_file(int fd)
+{
+  struct file *f;
+
+  if(fd < thread_current()->fd_nxt) {
+		f = thread_current()->fd_table[fd]; /* 파일 디스크립터에 해당하는 파일 객체를 리턴 */
+		return f;
+	}
+	return NULL; /* 없을 시 NULL 리턴 */
+}
+```
+> TODO : 설명
+
+#### **read**
+```cpp
+int
+read (int fd, void *buffer, unsigned size)
+{
+  int read_size = 0;
+	struct file *f;
+  if(!check_address(buffer))
+    exit(-1);
+    
+	lock_acquire(&lock_file); /* file에 동시 접근이 일어날 수 있으므로 Lock 사용 */
+
+	if(fd == 0) {   /* file descriptor가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
+    unsigned int i;
+    for(i = 0; i < size; i++) {
+       if (((char *)buffer)[i] == '\0') break;
+    }
+    read_size = i;
+	} else {
+		if((f = process_get_file(fd))) 
+      read_size = file_read(f,buffer,size);  /* file descriptor가 0이 아닐 경우 file의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
+	}
+
+	lock_release(&lock_file); /* file에 동시 접근이 일어날 수 있으므로 Lock 사용 */
+
+	return read_size;
+}
+```
+> TODO
+
+#### **write**
+```cpp
+int
+write (int fd, const void *buffer, unsigned size)
+{
+  int write_size = 0;
+	struct file *f;
+
+	lock_acquire(&lock_file); /* file에 동시 접근이 일어날 수 있으므로 Lock 사용 */
+
+	if(fd == 1) { /* file descriptor가 1일 경우(STDOUT) 버퍼에 저장된 값을 화면에 출력후 버퍼의 크기 리턴 (putbuf() 이용) */
+		putbuf(buffer, size);
+		write_size = size;
+	} else {    /* file descriptor가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 file에 기록후 기록한 바이트 수를 리턴 */
+		if((f = process_get_file(fd)))
+			write_size = file_write(f,(const void *)buffer, size);
+	}
+
+	lock_release(&lock_file); /* file에 동시 접근이 일어날 수 있으므로 Lock 사용 */
+
+	return write_size;
+}
+```
+> TODO
+
+#### **seek**
+```cpp
+void
+seek (int fd, unsigned position) 
+{
+  struct file *f = process_get_file(fd); /* file descriptor를 이용하여 file 객체 검색 */
+
+	if(f != NULL) file_seek(f, position); /* 해당 열린 file의 위치(offset)를 position만큼 이동 */
+}
+
+```
+> TODO
+
+#### **tell**
+```cpp
+unsigned
+tell (int fd) 
+{
+  struct file *f = process_get_file(fd); /* file descriptor를 이용하여 file 객체 검색 */
+
+	if(f != NULL) return file_tell(f); /* 해당 열린 file의 위치를 반환 */
+  return 0; 
+}
+```
+> TODO
+
+#### **close**
+```cpp
+void
+close (int fd)
+{
+  process_close_file(fd);
+}
+```
+> TODO
+
+```cpp
+void process_close_file(int fd)
+{
+	struct file *f;
+
+	if((f = process_get_file(fd))) {  /* 파일 디스크립터에 해당하는 파일을 닫음 */
+		file_close(f);
+		thread_current()->fd_table[fd] = NULL;  /* 파일 디스크립터 테이블 해당 엔트리 초기화 */
+	}
+}
+```
+>
+
+이렇게 Syscall Handler를 완성하여 System Calls을 해결할 수 있다.
+
+# **III. Implementation of Denying Write to Executables**
 
 ## **Analysis**
 
@@ -275,17 +641,6 @@ void thread_compare() { //create될때랑 priority 재설정 할때.
 
 이를 해결하는 방법으로 priority donation이 있다. 이는 H가 자신이 가진 priority를 L에게 일시적으로 넘겨 동등한 priority조건에서 점유하도록하여, 위와 같은 문제가 생기지 않도록 하는 방법이다.
 아래는 pintOS에서 제공하는 두 가지 donation과 관련된 문제이다.
-
->**Multiple donation**
->
->- 하나의 thread에 donation이 여러번 일어난 상황
->- Priority가 낮은 thread가 여러개의 우선순위가 더 높은 thread들의 lock을 모두 점유하고 있을 경우, Priority를 여러번 Donation받기 때문에 여러개의 Priority로 변경될 수 있는 데, 이때는 그 중 가장 높은 Priority로 갖도록 한다.
-
->**Nested donation**
->
->- lock P를 점유하고 있는 thread B가 다른 lock Q를 점유하고 있는 thread A에 lock Q를 신청하여, thread C가 thread B에 lock P를 신청할 경우 그 lock Q를 기다리는 것을 같이 기다려야하는 상황  
-
-위와 같은 문제로 인해 Donation한 thread들의 list와 Lock에 대한 정보를 저장해야하며, Donation이후 초기 Priority로 돌아오기 위해 이에 대한 값을 모두 thread 내부적으로 저장하여야 한다.
 
 ## **Brief Algorithm**
 
@@ -326,516 +681,33 @@ init_thread (struct thread *t, const char *name, int priority)
 
 - priority를 donate하는 함수(donate_priority)와, 기존의 priority로 reset시키는 함수(reset_priority)를 구현하였다.
 
-```cpp
-//threads/synch.c
-void donate_priority(struct thread *thrd)
-{
-  enum intr_level old_level;
-  old_level = intr_disable();
 
-  int level;
-
-  //In Pintos Document, we can apply depth of nested priority donation, level 8)
-  for (level = 0; level < LEVEL_MAX; level++) 
-  {
-    if (!thrd->wait_lock) break;
-    struct thread *holder = thrd->wait_lock->holder;
-    holder->priority = thrd->priority;
-    thrd = holder;
-  }
-  intr_set_level(old_level);
-}
-```
-
-> pintOS 공식문서에 따르면 nested priority donation의 최대 깊이는 8로, chain처럼 연결된 donation list를 순회하며 priority donation을 실행한다. thrd_cur의 wait_lock이 없을때까지 donation chain의 말단의 thread부터 차례로 donation이 이루어진다.
-
-```cpp
-//threads/synch.c
-void reset_priority(struct thread *thrd)
-{
-  enum intr_level old_level;
-  old_level = intr_disable();
-
-  ASSERT(!thread_mlfqs);
-
-  thrd->priority = thrd->origin_priority;
-
-  if (!list_empty(&thrd->donation_list))
-  {
-    list_sort(&thrd->donation_list, thread_comparepriority, NULL);
-    struct thread *front = 
-    list_entry(list_front(&thrd->donation_list), struct thread, donation_elem);
-    
-    if (front->priority > thrd->priority) thrd->priority = front->priority;
-  }
-
-  intr_set_level(old_level);
-}
-```
-> donation이후 wait_lock이 release되면, priority donate받은 thread는 priority를 다시 원래의 값으로 변경되어야하기에, thread에 저장되어있는 origin_priority로 바꾸어준다. 이때 multiple donation이 일어난 경우, donation_list에 thread가 남아있기 때문에 이를 확인하고, donation list의 priority를 확인하여 높은 순으로 정렬한 후 가장 priority가 높은 thread가 해당 thread보다 priority가 더 높을 경우, 다시 donation을 받아 priority를 설정하도록 한다.
-
-
-- 위에서 구현한 donate_priority함수를 이용하여 lock_acquire될 때 조건에 따라 donation이 진행되도록 구현하였다.
-
-```cpp
-//threads/synch.c
-void lock_acquire(struct lock *lock)
-{
-    ...
-    if (lock->holder) {
-        thrd_cur->wait_lock = lock;
-        list_insert_ordered(&lock->holder->donation_list, 
-                        &thrd_cur->donation_elem, thread_comparepriority, NULL);
-        donate_priority(thrd_cur);
-    };
-    ...
-    thrd_cur->wait_lock = NULL;
-}
-```
-
-> 해당 lock에 대해 holder가 이미 존재할 경우 즉, lock이 다른 thread에 holding되어있으면 당장 해당 lock을 사용할 수 없다. 따라서 현재 thread의 wait_lock에 lock을 설정해주고, 현재 thread를 해당 thread의 donation list에 추가한다. 이때 priority를 비교하여 sorting한 후 넣어준다. 이후 현재 thread에 대해 위에서 구현한 donate_priority 함수를 이용하여 priority donation을 수행한다.
-
-</br>
-
-- 위에서 구현한 reset_priority함수를 이용하여 lock_release될 때 reset이 진행되도록 구현하였다.
-  
-```cpp
-//threads/synch.c
-void lock_release(struct lock *lock)
-{
-    ...
-    lock_remove(lock);
-    reset_priority(lock->holder);
-    ...
-}
-```
-
-> lock을 release함에 따라, 현재 thread의 donation list에서 해당 lock을 wait하고 있던 thread들을 donation list에서 제거하는 함수를 호출하고, lock을 holding하고 있던 thread의 priority를 기존의 값으로 설정하며, multiple donation으로 인해 priority를 재설정해야하는 경우가 있을 수 있으므로, 위에서 구현한 reset_priority 함수를 이용하여 priority reset을 수행한다. 이후, lock의 holder를 NULL로 하여 lock을 최종적으로 release한다.
-
-</br>
-
-- 이 때 현재 thread의 donation list에서 해당 lock을 wait하고 있던 thread들을 donation list에서 제거하는 함수(lock_remove)를 구현하였다.
-
-```cpp
-//threads/synch.c
-void lock_remove(struct lock *lock)
-{
-  ASSERT(!thread_mlfqs);
-
-  struct thread *thrd_cur = thread_current();
-  struct list *list = &thrd_cur->donation_list;
-  struct list_elem *e;
-
-  for (e = list_begin(list); e != list_end(list); e = list_next(e))
-  {
-    struct thread *thrd = list_entry(e, struct thread, donation_elem);
-    if (lock == thrd->wait_lock)
-      list_remove(e);
-  }
-}
-```
-
-</br>
-
-- thread unblock후 unblock된 thread가 running thread보다 priority가 높을 수 있으므로 compare함수를 호출해주었다.
-
-```cpp
-void sema_up(struct semaphore *sema)
-{
-  ...
-  thread_compare(); 
-  ...
-}
-```
-
-- Synchronization 중 Conditional Variable에 해당하는 method이다.
-  
-```cpp
-struct semaphore_elem
-{
-  struct list_elem elem;      /* List element. */
-  struct semaphore semaphore; /* This semaphore. */
-}
-void cond_wait(struct condition *cond, struct lock *lock)
-{
-  struct semaphore_elem waiter;
-
-  ASSERT(cond != NULL);
-  ASSERT(lock != NULL);
-  ASSERT(!intr_context());
-  ASSERT(lock_held_by_current_thread(lock));
-
-  sema_init(&waiter.semaphore, 0);
-  // list_push_back (&cond->waiters, &waiter.elem);
-  list_insert_ordered(&cond->waiters, &waiter.elem, sema_comparepriority, NULL);
-   //sema compare priority에 따라 push back이 아닌 order하게 insert
-  lock_release(lock);
-  sema_down(&waiter.semaphore);
-  lock_acquire(lock);
-}
-
-void cond_signal(struct condition *cond, struct lock *lock UNUSED)
-{
-  ASSERT(cond != NULL);
-  ASSERT(lock != NULL);
-  ASSERT(!intr_context());
-  ASSERT(lock_held_by_current_thread(lock));
-
-  if (!list_empty(&cond->waiters))
-  {
-    list_sort(&cond->waiters, sema_comparepriority, NULL);
-    sema_up(&list_entry(list_pop_front(&cond->waiters), struct semaphore_elem, elem)->semaphore);
-  }
-}
-
-bool sema_comparepriority(const struct list_elem *thread_1, const struct list_elem *thread_2, void *aux)
-{
-  struct semaphore_elem *sema_1 = list_entry(thread_1, struct semaphore_elem, elem);
-  struct semaphore_elem *sema_2 = list_entry(thread_2, struct semaphore_elem, elem);
-  struct list *waiter_1 = &(sema_1->semaphore.waiters);
-  struct list *waiter_2 = &(sema_2->semaphore.waiters);
-  struct list_elem *elem_1 = list_begin(waiter_1);
-  struct list_elem *elem_2 = list_begin(waiter_2);
-
-  return list_entry(elem_1, struct thread, elem)->priority > list_entry(elem_2, struct thread, elem)->priority;
-}
-```
->cond_wait이 호출되면 기존에는 list_push_back으로 들어오는 순서대로 뒤에 저장이 되었다. 이를 위와 마찬가지로 priority를 고려하여 list에 넣어준다. Conditional Variable은 Lock, Semaphore와 조금은 달리 semaphore_elem라는 구조체를 이용한다. Conditional Variable을 이용하여 여러 thread에 걸려있는 semaphore를 해제 및 할당 할 수 있기 때문에 이를 전체적으로 관리하는 semaphore_elem 구조체를 사용한다. 먼저 cond_wait에 호출되면 초기화를 거친 후 semaphore들의 가장 앞에 있는 thread의 priority를 비교하여 list에 넣어준다. 그 이후 sema_down에 가서 반복문에 계속 loop에 걸려있는다. 이후, cond_signal을 보내면은 loop가 걸려있는 동안 priority가 변경되었을 수도 있으므로 list_sort를 진행하고, 가장 앞에있는 entry를 pop시켜준다.
-  
-</br></br></br></br></br></br></br></br></br></br></br>
-</br></br></br></br></br></br></br></br></br></br></br>
-
-# **IV. Implementation of Advanced Scheduler**
-
-## **Analysis**
-
-위에서 계속 사용하던 Priority Scheduling이 아닌 정해진 수식에 따라 thread의 priority를 계산해주는 Scheduling 기법을 Multi-Level Feedback Queue Schedulling(MLFQS)라 한다. 실행시에 -mlfqs 옵션에 따라 실행되며, 동시에 전역으로 선언된 thread_mlfqs boolean 값이 true로 setting된다. 이 변수값에 따라 실행되는 함수의 코드를 적절하게 작성해야한다.
-
-아래의 세 변수는 MLFQS mode에서 priority를 결정하기 위한 변수들의 계산식이다.
-|||
-|------|---|
-|**priority**|- priority : PRI_MAX - (recent_cpu/4) - (nice*2) </br> - 4 tick 마다 모든 thread의 priority를 다시 계산|
-|**recent_cpu**|- recent_cpu : (2 * load_avg) / (2 *load_avg + 1)* recent_cpu + nice </br> - 최근에 thread가 CPU time 을 얼마나 많이 사용했는지를 나타내는 값 </br> - 1 tick 마다 running thread의 recent_cpu이 1씩 증가 </br> - 1초 마다 모든 thread의 recent_cpu를 다시 계산 </br> - 실수값|
-|**load_avg**|- load_avg : (59/60) * load_avg + (1/60) *ready_threads</br>(*이 때 ready_threads는 ready or running thread의 수) </br> - 1초 마다 load_avg값을 다시 계산 </br> - 실수값
-|
-
-또한 PintOS는 부동소수점에 대한 계산을 지원하지 않기 때문에, recent_cpu, load_avg, priority등과 같은 계산식을 처리하기 위해서 아래와 같이 fixed-point에 대한 연산을 지정해주어야한다. 이는 pintOS 공식 문서를 참고하여 관련 함수를 구현해야 한다.
-|||
-|------|---|
-|Convert n to fixed point|n * f|
-|Convert x to integer (rounding toward zero)|x / f|
-|Convert x to integer (rounding to nearest)|(x + f / 2) / f if x >= 0, </br>(x - f / 2) / f if x <= 0.|
-|Add x and y|x + y|
-|Add x and n|x + n * f|
-|Subtract y from x|x - y|
-|Subtract n from x|x - n * f|
-|Multiply x by y|((int64_t) x) * y / f|
-|Multiply x by n|x * n|
-|Divide x by y|((int64_t) x) * y / f|
-|Divide x by n|x / n|
-
-## **Brief Algorithm**
-
-nice, recent_cpu값에 대한 변수를 thread에 추가하고, 전체 전역 변수로 load_avg를 추가한다. 또한, implement되지 않은 thread_get_nice, thread_get_recent_cpu, thread_get_load_avg, thread_set_nice에 대한 함수를 작성한다.<br>
-mlfqs mode에서는 donation이 일어나지 않기 때문에 lock_acquire과 lock_release함수에서 해당 부분에 대해 고려하여 수정해야하고, priority set도 임의로 실행되지 않도록 수정해야한다.
-
-## **Implementation**
-
-- 먼저 부동소수점 연산과 관련된 함수를 아래와 같이 fixed-point.h에 구현하였다.
-  
-    ```cpp
-    // threads/fixed-point.h
-
-    #include <stdint.h>
-    #ifndef FIXED_POINT_H
-    #define FIXED_POINT_H
-    #define F (1 << 14)
-
-    int fp_convert_N_to_fp(int N) { return N*F; }
-    int fp_convert_X_to_integer_zero(int X) { return X/F; }
-    int fp_convert_X_to_integer_round(int X) { 
-        return (X>=0)?(X+F/2)/F:(X-F/2)/F; 
-    }
-
-    int fp_add_X_and_Y(int X, int Y) { return X+Y; }
-    int fp_sub_Y_from_X(int X, int Y) { return X-Y; }
-    int fp_add_X_and_N(int X, int N) { return X+N*F; }
-    int fp_sub_N_from_X(int X, int N) { return X-N*F; }
-    int fp_mul_X_by_Y(int X, int Y) { return ((int64_t)X)*Y/F; }
-    int fp_mul_X_by_N(int X, int N) { return X*N; }
-    int fp_div_X_by_Y(int X, int Y) { return ((int64_t)X)*F/Y;}
-    int fp_div_X_by_N(int X, int N) { return X/N; }
-
-    #endif
-    ```
-
-- nice, recent_cpu값에 대한 변수를 thread에 추가하고, 초기화해주었다.  
-
-    ```cpp
-    // threads/thread.h
-
-    struct thread
-    {
-        ...
-        /*Variable for Advanced Scheduler*/
-        int nice;
-        int recent_cpu;
-        ...
-    };
-    ```
-
-    ```cpp
-    // threads/thread.h
-
-    static void
-    init_thread (struct thread *t, const char *name, int priority)
-    {
-        ...
-        t->nice = 0;
-        t->recent_cpu = 0;
-        ...
-    }
-    ```
-
-- 전체 전역 변수로 load_avg를 추가하고, 초기화하였다.
-
-    ```cpp
-    //threads/thread.c
-    ...
-    int thread_load_avg;
-    ...
-    void
-    thread_start (void) 
-    {
-        ...
-        /* Initialize Load Avg */
-        thread_load_avg = 0;
-    }
-    ```
-
-- mlfqs mode에서 priority를 결정하기 위한 변수(recent_cpu, load_avg)들의 계산식을 구현하였다.
-
-    ```cpp
-    // threads/thread.c
-
-    void mlfqs_cal_priority(struct thread *thrd){
-        //priority = PRI_MAX - (recent_cpu/4) - (nice*2)
-        if(thrd != idle_thread) {
-            thrd->priority = fp_sub_Y_from_X(PRI_MAX, fp_add_X_and_Y(
-            fp_convert_X_to_integer_round(fp_div_X_by_N(thrd->recent_cpu, 4)), 
-            fp_mul_X_by_N(thrd->nice, 2)));
-        }
-    }
-
-    void mlfqs_cal_recent_cpu(struct thread *thrd){
-        //recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice
-        if(thrd != idle_thread) {
-            thrd->recent_cpu = fp_add_X_and_N(fp_mul_X_by_Y(
-            fp_div_X_by_Y( fp_mul_X_by_N(thread_load_avg, 2),
-            fp_add_X_and_N(fp_mul_X_by_N(thread_load_avg, 2), 1)),
-            thrd->recent_cpu) , thrd->nice);
-        }
-    }
-
-    void mlfqs_inc_recent_cpu(){
-        // 1 tick 마다 running thread의 recent_cpu이 1씩 증가
-        if(thread_current() != idle_thread){
-            thread_current()->recent_cpu = 
-            fp_add_X_and_N(thread_current()->recent_cpu, 1);
-        }
-    }
-
-    void mlfqs_priority(){
-        //4 tick 마다 모든 thread의 priority를 다시 계산
-        struct list_elem *e;
-        struct thread *thrd;
-        for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e))
-        {
-            thrd = list_entry(e, struct thread, allelem);
-            mlfqs_cal_priority(thrd);
-        }
-    }
-
-    void mlfqs_recent_cpu(){
-        //1초 마다 모든 thread의 recent_cpu를 다시 계산
-        struct list_elem *e;
-        struct thread *thrd;
-        for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e))
-        {
-            thrd = list_entry(e, struct thread, allelem);
-            mlfqs_cal_recent_cpu(thrd);
-        }
-    }
-
-    void mlfqs_load_avg(){
-        //load_avg = (59/60) * load_avg + (1/60) * ready_threads
-        if(thread_current() != idle_thread) {
-            thread_load_avg = fp_add_X_and_Y(
-            fp_mul_X_by_Y(fp_div_X_by_Y(
-                fp_convert_N_to_fp(59), fp_convert_N_to_fp(60)), 
-                thread_load_avg), 
-            fp_mul_X_by_N(fp_div_X_by_Y( 
-                fp_convert_N_to_fp(1), fp_convert_N_to_fp(60)),
-                fp_add_X_and_Y(list_size(&ready_list) , 1)));
-        } else {
-            thread_load_avg = fp_add_X_and_Y(
-                fp_mul_X_by_Y(fp_div_X_by_Y( 
-                    fp_convert_N_to_fp(59), fp_convert_N_to_fp(60)), 
-                thread_load_avg), 
-                fp_mul_X_by_N(fp_div_X_by_Y( 
-                    fp_convert_N_to_fp(1), fp_convert_N_to_fp(60)), 
-                list_size(&ready_list)));
-        }
-    }
-    ```
-
-- nice를 set/get하는 함수(thread_set_nice, thread_get_nice), recent_cpu, load_avg get하는 함수를 구현하였다.
-
-    ```cpp
-    // threads/thread.c
-
-    /* Sets the current thread's nice value to NICE. */
-    void
-    thread_set_nice (int nice) 
-    {
-        //현재 thread의 nice를 input한 nice로 set.
-        thread_current()->nice = nice;
-    }
-
-    /* Returns the current thread's nice value. */
-    int
-    thread_get_nice (void) 
-    {
-        //현재 thread의 nice를 return
-        return thread_current()->nice;
-    }
-
-    /* Returns 100 times the system load average. */
-    int
-    thread_get_load_avg (void) 
-    {
-        //현재 system의 load_avg를 100배한 값을 부동소수점 연산으로 계산하고 return
-        return fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_load_avg, 100));
-    }
-
-    /* Returns 100 times the current thread's recent_cpu value. */
-    int
-    thread_get_recent_cpu (void) 
-    {
-        //현재 thread의 recent_cpu를 100배한 값을 부동소수점 연산으로 계산하고 return
-        return fp_convert_X_to_integer_round(fp_mul_X_by_N(thread_current()->recent_cpu, 100));
-    }
-    ```
-
-- 일정 시간마다 다시 계산해야하는 값에 대한 함수들을 호출하도록 구현하였다.
-
-    ```cpp
-    // threads/thread.c
-
-    /* Timer interrupt handler. */
-    static void
-    timer_interrupt (struct intr_frame *args UNUSED)
-    {
-        ticks++; //Since OS booting.
-        thread_tick ();
-
-        if(!thread_mlfqs){
-            thread_wakeup(ticks);   //OS BOOT이후 TICKS와 비교
-        } else {
-            // 1 tick 마다 running thread의 recent_cpu이 1씩 증가
-            mlfqs_inc_recent_cpu();  
-
-            if(!(ticks % TIMER_SLICE)){
-                //4 tick 마다 모든 thread의 priority를 다시 계산
-                mlfqs_priority(); 
-
-                if(!(ticks % TIMER_FREQ)){
-                    //1초 마다 모든 thread의 recent_cpu와 load_avg를 다시 계산
-                    mlfqs_load_avg();
-                    mlfqs_recent_cpu();
-                }
-            }
-            thread_wakeup(ticks);
-        }
-    }
-    ```
-
-- mlfqs mode에서 lock_acquire과 lock_release에 donation과 관련된 부분을 제거하고, priority set도 임의로 실행되지 않도록 수정하였다.
-
-    ```cpp
-    // threads/synch.c
-    void lock_acquire(struct lock *lock)
-    {
-        ...
-        if (!thread_mlfqs) {
-            if (lock->holder) {
-                thrd_cur->wait_lock = lock;
-                list_insert_ordered(&lock->holder->donation_list, &thrd_cur->donation_elem, thread_comparepriority, NULL);
-                donate_priority(thrd_cur);
-            };
-        }
-        ...
-        if (!thread_mlfqs)
-            thrd_cur->wait_lock = NULL;
-    }
-
-    void lock_release(struct lock *lock)
-    {
-        ...
-        if (!thread_mlfqs) {
-            lock_remove(lock);
-            reset_priority(lock->holder);
-        }
-        ...
-    }
-    ```
-
-    ```cpp
-    // threads/thread.c
-
-    /* Sets the current thread's priority to NEW_PRIORITY. */
-    void
-    thread_set_priority (int new_priority) 
-    {
-        struct thread *thrd_cur = thread_current();
-        if(!thread_mlfqs){      
-            //mlfqs모드에서는 아래의 과정이 필요하지 않다.
-            thrd_cur->origin_priority = new_priority;
-            reset_priority(thrd_cur);
-            thread_compare(); 
-        }
-    }
-    ```
-
-<br><br>
 
 # **Discussion**
-## 1. MLFQ Nice Test Fail Issue
-> 위 Test를 진행하던 도중, 개인 Vmware에서는 통과가 되었지만 서버에서는 통과가 되지 않는 문제가 발생하였다. 원인을 분석한 결과, 첫번째 threads가 지정된 시간보다 훨씬 CPU를 점유하고 있다는 것으로 파악되었다. 코드를 분석해보았을 때, mlfqs모드가 아닌 일반모드에서는 nice에 의해 priority가 변하지 않기 때문에 관련이 없지만, mlfqs모드에서는 nice에 의해 priority가 변하기 때문에 이를 실시간으로 update 시켜야 할 필요가 있다고 생각했다. 다음과 같은 과정으로 코드를 수정하였다. 
-> Nice를 계산하여 priority를 계산하는 method에 priority를 sorting해주는 코드를 작성한다. 이유는 priority를 계산하는 즉시 ready_list에 있는 thread들의 priority 순서를 update 해주어야 한다고 생각했다. 그 결과, thread들이 점유하고 있어야 하는 시간보다 훨씬 적게 CPU를 점유하는 상황이 발생하였다. 이후, 이 nice와 recent_cpu는 짧은 시간마다 계속 갱신되는 것이기 때문에, 위와 같은 상황이 발생할 수 있다고 생각하였고 자고 있는 thread를 깨우기 직전에 sorting을 진행하여 그 sorted된 값으로 scheduling이 이루어져도 무방하고, thread들은 점유하고 있어야 할 시간만큼 점유할 수 있을 것이라 생각했다. 그에 따라, thread_wakeup함수에 list_sort(&ready_list,thread_comparepriority,NULL)을 추가하였고 의미있는 결과를 얻었다. 이전에는 thread가 점유하는 tick이 714, 709에서만 번갈아 나오다가, 690대까지 점유하는 결과를 얻었다.
-> //하지만, 매 실행마다 결과가 크게 3가지로 나누어지는 것을 볼 수 있었고, 문제는 완전히 해결되지 않았다.
-문제가 해결되지 않아 PintOS 공식 문서의 FAQ부분을 읽어본 결과, TEST가 통과하지 않는다면 Timer Interrupt Handler 쪽을 살펴보라는 조언을 얻었다.
+## 1. ROX TEST
+> 위 Test를
 
 ```cpp
-static void timer_interrupt (struct intr_frame *args UNUSED)
+int
+open (const char *file)
 {
-    ticks++; //Since OS booting.
-    thread_tick ();
+  int fd;
+	struct file *f;
 
-    if(!thread_mlfqs){
-        thread_wakeup(ticks);//OS BOOT이후 TICKS와 비교
-    } else {
-        mlfqs_inc_recent_cpu();
-        if(!(ticks % TIMER_SLICE)){
-            mlfqs_priority();
-            if(!(ticks % TIMER_FREQ)){
-                mlfqs_recent_cpu();
-                mlfqs_load_avg();
-            }
-        }
-        thread_wakeup(ticks);
-    }
-}   
+  if (file == NULL) exit(-1);
+
+  lock_acquire(&lock_file); 
+  f = filesys_open(file); /* 파일을 open */
+  if (strcmp(thread_current()->name, file) == 0) file_deny_write(f);  /*ROX TEST*/
+  
+	if(f != NULL) { 
+		fd = process_add_file(f);     /* 해당 파일 객체에 파일 디스크립터 부여 */
+    lock_release(&lock_file);
+		return fd;                        /* 파일 디스크립터 리턴 */
+	}
+  lock_release(&lock_file);
+	return -1; /* 해당 파일이 존재하지 않으면 -1 리턴 */
+}
 ```
 
 > 위 코드가 수정 전의 timer interrupt method이다. Recent_cpu와 load_avg의 call 순서를 보면 막연히 공식 문서에 나온 순서대로 call을 한 것을 볼 수 있다. 그렇지만, 각각의 값에 대한 계산식을 생각해보면 load_avg를 먼저 call하여 계산을 진행하고 recent_cpu를 호출해야 올바르다고 할 수 있다. 그 이유는 recent_cpu의 계산값이 load_avg에 영향을 받기 때문이다. 반면, load_avg는 그렇지 않다. 이에 따라 다음과 같이 코드를 수정하였다. 그 결과 문제가 모두 해결되었다.
@@ -847,7 +719,7 @@ if(!(ticks % TIMER_FREQ)){
 }
 ```
 
-## 2. Prioirty vs. Origin_Priority Issue on Priority Donation
+## 2. Multi_oom Test
 > Priority donation을 구현할 때 처음 작성시에는 set priority부분에서 priority에 새로운 값을 대입하였다. 구현하고자 하는 방향에는 origin_priority와 priority를 구분하였는데, priority를 reset하거나 set할 때 priority에 대입을 하다보니 priority donation 중에 일어난 priority와 값이 구분되지 않아 본래의 priority로 돌아가고자 할 때 문제가 생기는 현상이 발생하였다. 이에 대한 해결 방법으로, set 또는 reset 하는 priority는 origin_priority에 대입하고, 그 외 priority donation 등 좀더 포괄적으로 많은 기능을 수행하는 priority는 priority 변수에 대입하였다. 그 결과 문제는 해결되었다.
 
 ## 3. What We have Learned
@@ -860,4 +732,4 @@ if(!(ticks % TIMER_FREQ)){
 
 ![Result](./img/ResultScreenShot.png)
 
-위와 같이 이번 PintOs Project 1의 모든 test를 pass한 모습을 볼 수 있다.
+위와 같이 이번 PintO Project 2의 모든 test를 pass한 모습을 볼 수 있다.

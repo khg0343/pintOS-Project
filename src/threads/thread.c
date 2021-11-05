@@ -307,7 +307,7 @@ thread_exit (void)
   list_remove (&thread_current()->allelem);
   thread_current()->isExit = true;/* 프로세스 디스크립터에 프로세스 종료를 알림 */
   if(thread_current() != initial_thread){
-	  sema_up(&(thread_current()->sema_exit)); /* 부모프로세스의 대기 상태 이탈(세마포어 이용) */
+	  sema_up(&(thread_current()->sema_exit)); /* 부모프로세스의 대기 상태 이탈 */
   }
   thread_current ()->status = THREAD_DYING;
   schedule ();

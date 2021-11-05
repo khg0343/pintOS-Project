@@ -11,7 +11,7 @@
 static void syscall_handler (struct intr_frame *);
 struct lock lock_file;
 
-bool check_address (void *addr)
+bool check_address(void *addr)
 {
   if(is_user_vaddr(addr)) return true;
   else return false;
@@ -19,7 +19,7 @@ bool check_address (void *addr)
 
 void get_argument(void *esp, int *arg, int count){
   int i;
-  for(i = 0; i < count; i ++){
+  for(i = 0; i < count; i++){
     if(!check_address(esp + 4*i)) exit(-1);
     arg[i] = *(int *)(esp + 4*i);
   }
@@ -174,12 +174,13 @@ tell (int fd)
 void
 close (int fd)
 {
-  struct file *f;
+  // struct file *f;
 
-	if((f = process_get_file(fd))) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
-		file_close(f);      /* 해당하는 파일을 닫음 */
-		thread_current()->fd_table[fd] = NULL; /* 파일 디스크립터 엔트리 초기화 */
-	}
+	// if((f = process_get_file(fd))) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+	// 	file_close(f);      /* 해당하는 파일을 닫음 */
+	// 	thread_current()->fd_table[fd] = NULL; /* 파일 디스크립터 엔트리 초기화 */
+	// }
+  process_close_file(fd);
 }
 
 static void

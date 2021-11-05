@@ -651,6 +651,5 @@ void process_close_file(int fd)
 	if((f = process_get_file(fd))) {  /* 파일 디스크립터에 해당하는 파일을 닫음 */
 		file_close(f);
 		thread_current()->fd_table[fd] = NULL;  /* 파일 디스크립터 테이블 해당 엔트리 초기화 */
-
 	}
 }
