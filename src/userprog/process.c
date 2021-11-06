@@ -56,28 +56,22 @@ void construct_esp(char *file_name, void **esp) {
     argv[i] = *esp;
   }
 
-  /* push word alignment */
   *esp -= ((uint32_t)*esp) % 4;
   
-  /* push null */
   *esp -= 4;
   **(uint32_t **)esp = 0;
   
-  /* push argv[i] */
   for (i = argc - 1; i >= 0; i--) {
     *esp -= 4;
     **(uint32_t **)esp = argv[i];
   }
   
-  /* push argv */
   *esp -= 4;
   **(uint32_t **)esp = *esp + 4;
 
-  /* push argc */
   *esp -= 4;
   **(uint32_t **)esp = argc;
   
-  /* push return address */
   *esp -= 4;
   **(uint32_t **)esp = 0;
 
