@@ -899,4 +899,4 @@ process_execute (const char *file_name)
 
 ![Result](./img/result.PNG)
 
-위와 같이 이번 PintO Project 2의 모든 test를 pass한 모습을 볼 수 있다.
+위와 같이 이번 PintOS Project 2의 모든 test를 pass한 모습을 볼 수 있다.
