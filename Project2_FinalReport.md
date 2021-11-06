@@ -823,6 +823,6 @@ process_execute (const char *file_name)
 # **Result**
 서버에서 make check를 입력하여 나온 모든 test에 대한 결과값이다.
 
-![Result](./img/ResultScreenShot.png)
+![Result](./img/result.png)
 
 위와 같이 이번 PintO Project 2의 모든 test를 pass한 모습을 볼 수 있다.
