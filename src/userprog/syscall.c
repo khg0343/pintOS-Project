@@ -89,9 +89,9 @@ open (const char *file)
   if (strcmp(thread_current()->name, file) == 0) file_deny_write(f);  /*ROX TEST*/
   
 	if(f != NULL) { 
-		fd = process_add_file(f);     /* 해당 파일 객체에 파일 디스크립터 부여 */
+		fd = process_add_file(f);     /* 해당 파일 객체에 file descriptor 부여 */
     lock_release(&lock_file);
-		return fd;                        /* 파일 디스크립터 리턴 */
+		return fd;                        /* file descriptor 리턴 */
 	}
   lock_release(&lock_file);
 	return -1; /* 해당 파일이 존재하지 않으면 -1 리턴 */
@@ -101,7 +101,7 @@ int
 filesize (int fd) 
 {
 	struct file *f;
-	if((f = process_get_file(fd))) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+	if((f = process_get_file(fd))) { /* file descriptor를 이용하여 파일 객체 검색 */
 		return file_length(f); /* 해당 파일의 길이를 리턴 */
 	}
 	return -1;  /* 해당 파일이 존재하지 않으면 -1 리턴 */
@@ -117,7 +117,7 @@ read (int fd, void *buffer, unsigned size)
     
 	lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
-	if(fd == 0) {   /* 파일 디스크립터가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
+	if(fd == 0) {   /* file descriptor가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
     unsigned int i;
     for(i = 0; i < size; i++) {
        if (((char *)buffer)[i] == '\0') break;
@@ -125,7 +125,7 @@ read (int fd, void *buffer, unsigned size)
     read_size = i;
 	} else {
 		if((f = process_get_file(fd))) 
-      read_size = file_read(f,buffer,size);  /* 파일 디스크립터가 0이 아닐 경우 파일의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
+      read_size = file_read(f,buffer,size);  /* file descriptor가 0이 아닐 경우 파일의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
 	}
 
 	lock_release(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
@@ -141,10 +141,10 @@ write (int fd, const void *buffer, unsigned size)
 
 	lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
-	if(fd == 1) { /* 파일 디스크립터가 1일 경우(STDOUT) 버퍼에 저장된 값을 화면에 출력후 버퍼의 크기 리턴 (putbuf() 이용) */
+	if(fd == 1) { /* file descriptor가 1일 경우(STDOUT) 버퍼에 저장된 값을 화면에 출력후 버퍼의 크기 리턴 (putbuf() 이용) */
 		putbuf(buffer, size);
 		write_size = size;
-	} else {    /* 파일 디스크립터가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 파일에 기록후 기록한 바이트 수를 리턴 */
+	} else {    /* file descriptor가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 파일에 기록후 기록한 바이트 수를 리턴 */
 		if((f = process_get_file(fd)))
 			write_size = file_write(f,(const void *)buffer, size);
 	}
@@ -157,7 +157,7 @@ write (int fd, const void *buffer, unsigned size)
 void
 seek (int fd, unsigned position) 
 {
-  struct file *f = process_get_file(fd); /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+  struct file *f = process_get_file(fd); /* file descriptor를 이용하여 파일 객체 검색 */
 
 	if(f != NULL) file_seek(f, position); /* 해당 열린 파일의 위치(offset)를 position만큼 이동 */
 }
@@ -165,9 +165,9 @@ seek (int fd, unsigned position)
 unsigned
 tell (int fd) 
 {
-  struct file *f = process_get_file(fd); /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+  struct file *f = process_get_file(fd); /* file descriptor를 이용하여 파일 객체 검색 */
 
-	if(f != NULL) return file_tell(f); /* 해당 열린 파일의 위치를 반환 */
+	if(f != NULL) return file_tell(f); /* 해당 열린 파일의 위치를 return */
   return 0; 
 }
 
@@ -176,9 +176,9 @@ close (int fd)
 {
   // struct file *f;
 
-	// if((f = process_get_file(fd))) { /* 파일 디스크립터를 이용하여 파일 객체 검색 */
+	// if((f = process_get_file(fd))) { /* file descriptor를 이용하여 파일 객체 검색 */
 	// 	file_close(f);      /* 해당하는 파일을 닫음 */
-	// 	thread_current()->fd_table[fd] = NULL; /* 파일 디스크립터 엔트리 초기화 */
+	// 	thread_current()->fd_table[fd] = NULL; /* file descriptor 엔트리 초기화 */
 	// }
   process_close_file(fd);
 }

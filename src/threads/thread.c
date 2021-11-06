@@ -199,12 +199,12 @@ thread_create (const char *name, int priority,
   sf->ebp = 0;
 
   #ifdef USERPROG
-    t->parent = thread_current(); /* 부모 프로세스 저장 */
-    sema_init(&(t->sema_exit), 0); /* exit 세마포어 0으로 초기화 */
-    sema_init(&(t->sema_load), 0); /* load 세마포어 0으로 초기화 */
-    t->isExit = false; /* 프로세스가 종료되지 않음 */
+    t->parent = thread_current(); /* parent process 저장 */
+    sema_init(&(t->sema_exit), 0); /* exit semaphore 0으로 초기화 */
+    sema_init(&(t->sema_load), 0); /* load semaphore 0으로 초기화 */
+    t->isExit = false; /* process가 종료되지 않음 */
     t->isLoad = false; /* 프로그램이 로드되지 않음 */
-    list_push_back(&(running_thread()->child_list), &(t->child_elem));/* 자식 리스트에 추가 */
+    list_push_back(&(running_thread()->child_list), &(t->child_elem));/* child list에 추가 */
 
     t->fd_nxt = 2;/* fd 값 초기화(0,1은 표준 입력,출력) */
     t->fd_table = palloc_get_page(PAL_ZERO); /* File Descriptor 테이블에 메모리 할당 */
@@ -305,9 +305,9 @@ thread_exit (void)
      when it calls thread_schedule_tail(). */
   intr_disable ();
   list_remove (&thread_current()->allelem);
-  thread_current()->isExit = true;/* 프로세스 디스크립터에 프로세스 종료를 알림 */
+  thread_current()->isExit = true;/* process descriptor에 process 종료를 알림 */
   if(thread_current() != initial_thread){
-	  sema_up(&(thread_current()->sema_exit)); /* 부모프로세스의 대기 상태 이탈 */
+	  sema_up(&(thread_current()->sema_exit)); /* parentprocess의 대기 상태 이탈 */
   }
   thread_current ()->status = THREAD_DYING;
   schedule ();

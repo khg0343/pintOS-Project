@@ -214,10 +214,10 @@ process_exit (void)
   uint32_t *pd;
 
   int i;
-  for(i = 2; i < cur->fd_nxt; i++) /* 파일 디스크립터 테이블의 최대값을 이용해 파일 디스크립터의 최소값인 2가 될 때까지 파일을 닫음 */
+  for(i = 2; i < cur->fd_nxt; i++) /* file descriptor 테이블의 최대값을 이용해 file descriptor의 최소값인 2가 될 때까지 파일을 닫음 */
 	  process_close_file(i);
   
-  palloc_free_page(cur->fd_table); /* 파일 디스크립터 테이블 메모리 해제 */
+  palloc_free_page(cur->fd_table); /* file descriptor 테이블 메모리 해제 */
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -598,22 +598,22 @@ struct thread *get_child_process (pid_t pid)
   struct list_elem *e;
   struct list *child_list = &thread_current()->child_list;
   struct thread *thrd;
-  /* 자식 리스트에 접근하여 프로세스 디스크립터 검색 */
+  /* child list에 접근하여 process descriptor 검색 */
   for (e = list_begin (child_list); e != list_end (child_list); e = list_next (e))
   {
     thrd = list_entry(e, struct thread, child_elem);
-    if(thrd->tid == pid) /* 해당 pid가 존재하면 프로세스 디스크립터 반환 */
+    if(thrd->tid == pid) /* 해당 pid가 존재하면 process descriptor return */
       return thrd;
   }
-  return NULL; /* 리스트에 존재하지 않으면 NULL 리턴 */
+  return NULL; /* list에 존재하지 않으면 NULL 리턴 */
 }
 
 void remove_child_process(struct thread *cp)
 {
   if(cp != NULL)
 	{
-		list_remove(&(cp->child_elem));  /* 자식 리스트에서 제거*/
-		palloc_free_page(cp);           /* 프로세스 디스크립터 메모리 해제 */
+		list_remove(&(cp->child_elem));  /* child list에서 제거*/
+		palloc_free_page(cp);           /* process descriptor 메모리 해제 */
 	}
 }
 
@@ -621,10 +621,10 @@ int process_add_file (struct file *f)
 {
   int fd = thread_current()->fd_nxt;
 
-  thread_current()->fd_table[fd] = f; /* 파일 객체를 파일 디스크립터 테이블에 추가*/
-  thread_current()->fd_nxt++; /* 파일 디스크립터의 최대값 1 증가 */
+  thread_current()->fd_table[fd] = f; /* 파일 객체를 file descriptor 테이블에 추가*/
+  thread_current()->fd_nxt++; /* file descriptor의 최대값 1 증가 */
 
-  return fd;  /* 파일 디스크립터 리턴 */
+  return fd;  /* file descriptor 리턴 */
 }
 
 struct file *process_get_file(int fd)
@@ -632,7 +632,7 @@ struct file *process_get_file(int fd)
   struct file *f;
 
   if(fd < thread_current()->fd_nxt) {
-		f = thread_current()->fd_table[fd]; /* 파일 디스크립터에 해당하는 파일 객체를 리턴 */
+		f = thread_current()->fd_table[fd]; /* file descriptor에 해당하는 파일 객체를 리턴 */
 		return f;
 	}
 	return NULL; /* 없을 시 NULL 리턴 */
@@ -642,8 +642,8 @@ void process_close_file(int fd)
 {
 	struct file *f;
 
-	if((f = process_get_file(fd))) {  /* 파일 디스크립터에 해당하는 파일을 닫음 */
+	if((f = process_get_file(fd))) {  /* file descriptor에 해당하는 파일을 닫음 */
 		file_close(f);
-		thread_current()->fd_table[fd] = NULL;  /* 파일 디스크립터 테이블 해당 엔트리 초기화 */
+		thread_current()->fd_table[fd] = NULL;  /* file descriptor 테이블 해당 엔트리 초기화 */
 	}
 }
