@@ -139,10 +139,6 @@ bffffff0  fe ff ff bf 00 00 00 00-00 65 63 68 6f 00 78 00 |.........echo.x.|
 ```
 - 위는 hex_dump(if_.esp, if_.esp, PHYS_BASE – if_.esp, true)를 실행한 결과이다. 알맞게 stack에 쌓인 것을 확인 할 수 있다.
 
-
-
-</br></br></br></br></br></br></br></br></br></br></br></br>
-
 # **II. Implementation of System Calls & Process Termination Messages**
 
 ## **Analysis**
