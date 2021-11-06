@@ -18,7 +18,7 @@
 
 - Process_execute()가 실행되면 file_name의 첫 부분(token이라 명명)을 thread_create에 첫번째 인자로 넘긴다. 
 - Start_process에서 load를 호출한다. 이때, load의 첫번째 parameter를 file_name의 첫번째 token을 넘긴다.
-- Load()가 success를 return하면 putArguments(file_name,&if_.esp)를 호출하여 메모리에 argument, address of argument, return address를 넣는다.
+- Load()가 success를 return하면 construct_esp(file_name,&if_.esp)를 호출하여 메모리에 argument, address of argument, return address를 넣는다.
 
 
 ## Implementation
@@ -74,64 +74,60 @@ static void start_process (void *file_name_)
 - construct_esp()의 구현이다.
   
 ```cpp
-void construct_esp(char *file_name, void **esp) 
-{
-  char ** argv;
+void construct_esp(char *file_name, void **esp) {
+
   int argc;
-  int total_len;
-  char stored_file_name[256];
+  char ** argv;
+  char *name;
   char *token;
-  char *last;
+  char *remain;
   int i;
   int len;
   
-  strlcpy(stored_file_name, file_name, strlen(file_name) + 1);
-  token = strtok_r(stored_file_name, " ", &last);
+  name = palloc_get_page(PAL_ZERO);
+
   argc = 0;
-  /* calculate argc */
-  while (token != NULL) 
-  {
-    argc += 1;
-    token = strtok_r(NULL, " ", &last);
+  strlcpy(name, file_name, strlen(file_name) + 1);
+  for(token = strtok_r(name, " ", &remain); token != NULL; token = strtok_r(NULL, " ", &remain)){
+    if(*token != " ")
+      argc++;
   }
-  argv = (char **)malloc(sizeof(char *) * argc);
-  /* store argv */
-  strlcpy(stored_file_name, file_name, strlen(file_name) + 1);
-  for (i = 0, token = strtok_r(stored_file_name, " ", &last); i < argc; i++, token = strtok_r(NULL, " ", &last)) {
+
+  i = 0;
+  argv = (char **)palloc_get_page(PAL_ZERO);
+  strlcpy(name, file_name, strlen(file_name) + 1);
+  for (token = strtok_r(name, " ", &remain); i < argc; token = strtok_r(NULL, " ", &remain)) {
     len = strlen(token);
-    argv[i] = token;
+    argv[i++] = token;
   }
-  /* push argv[argc-1] ~ argv[0] */
-  total_len = 0;
-  for (i = argc - 1; 0 <= i; i --) 
-  {
+
+  for (i = argc - 1; i >= 0; i--) {
     len = strlen(argv[i]);
     *esp -= len + 1;
-    total_len += len + 1;
     strlcpy(*esp, argv[i], len + 1);
     argv[i] = *esp;
   }
-  /* push word align */
-  *esp -= total_len % 4 != 0 ? 4 - (total_len % 4) : 0;
-  /* push NULL */
+
+  *esp -= ((uint32_t)*esp) % 4;
+  
   *esp -= 4;
   **(uint32_t **)esp = 0;
-  /* push address of argv[argc-1] ~ argv[0] */
-  for (i = argc - 1; 0 <= i; i--) 
-  {
+  
+  for (i = argc - 1; i >= 0; i--) {
     *esp -= 4;
     **(uint32_t **)esp = argv[i];
   }
-  /* push address of argv */
+  
   *esp -= 4;
   **(uint32_t **)esp = *esp + 4;
-  /* push argc */
+
   *esp -= 4;
   **(uint32_t **)esp = argc;
-  /* push return address */
   *esp -= 4;
   **(uint32_t **)esp = 0;
-  free(argv);
+
+  palloc_free_page(name);
+  palloc_free_page(argv);
 }
 ```
 > 메모리에 argument를 쌓는 전체적인 과정은 esp를 직접 조작하여 쌓는다. Stack은 위에서 아래로 자라나므로, -연산을 이용하여 조작한다. Stored_file_name은 file_name을 이용하여 직접 token을 조작하면 원본이 바뀔 수 있기 때문에 만든 일종의 temp value이다. Size를 256으로 고정한 이유는 pintos document에서 256보다 큰 argument는 들어올 수 없다고 제한을 걸어놓았고, 이를 이용해도 된다는 글에서 착안했다. 
@@ -142,7 +138,7 @@ bfffffe0  00 00 00 00 02 00 00 00-ec ff ff bf f9 ff ff bf |................|
 bffffff0  fe ff ff bf 00 00 00 00-00 65 63 68 6f 00 78 00 |.........echo.x.|
 ```
 - 위는 hex_dump(if_.esp, if_.esp, PHYS_BASE – if_.esp, true)를 실행한 결과이다. 알맞게 stack에 쌓인 것을 확인 할 수 있다.
-  ★★★★★★★★★★★★★construct_esp 고치고 다시 수정 필요 ★★★★★★★★★★★★★★★★
+
 
 
 </br></br></br></br></br></br></br></br></br></br></br></br>
