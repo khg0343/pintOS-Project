@@ -578,41 +578,63 @@ write (int fd, const void *buffer, unsigned size)
 
 #### **seek**
 ```cpp
+/*userprog/syscall.c*/
 void
 seek (int fd, unsigned position) 
 {
   struct file *f = process_get_file(fd); /* file descriptor를 이용하여 file 객체 검색 */
 
-	if(f != NULL) file_seek(f, position); /* 해당 열린 file의 위치(offset)를 position만큼 이동 */
+  if(f != NULL) file_seek(f, position); /* 해당 열린 file의 위치(offset)를 position만큼 이동 */
+}
+
+/*filesys/file.c*/
+void
+file_seek (struct file *file, off_t new_pos)
+{
+  ASSERT (file != NULL);
+  ASSERT (new_pos >= 0);
+  file->pos = new_pos;
 }
 
 ```
-> TODO
+> 열린 파일의 위치를 이동시키는 System Call이다. file descriptor에 해당하는 파일을 찾고, file.c에 구현되어있는 file_seek을 이용하여 해당 file의 위치를 이동시킨다.
 
 #### **tell**
 ```cpp
+/*userprog/syscall.c*/
 unsigned
 tell (int fd) 
 {
   struct file *f = process_get_file(fd); /* file descriptor를 이용하여 file 객체 검색 */
 
-	if(f != NULL) return file_tell(f); /* 해당 열린 file의 위치를 반환 */
+  if(f != NULL) return file_tell(f); /* 해당 file의 위치를 반환 */
   return 0; 
 }
+
+/*filesys/file.c*/
+off_t
+file_tell (struct file *file) 
+{
+  ASSERT (file != NULL);
+  return file->pos;
+}
+
 ```
-> TODO
+> 열린 파일의 위치를 알려주는 System Call이다. file descriptor에 해당하는 파일을 찾고, file.c에 구현되어있는 file_tell을 이용하여 해당 file의 위치를 반환한다.
 
 #### **close**
 ```cpp
 void
+/*userprog/syscall.c*/
 close (int fd)
 {
   process_close_file(fd);
 }
 ```
-> TODO
+> 열린 file을 닫는 System Call이다. userprog/process.c의 process_close_file()함수를 통해 file descriptor에 해당하는 파일을 닫고, 해당 file descriptor를 제거한다.
 
 ```cpp
+/*userprog/process.c*/
 void process_close_file(int fd)
 {
 	struct file *f;
@@ -620,62 +642,106 @@ void process_close_file(int fd)
 	if((f = process_get_file(fd))) {  /* 파일 디스크립터에 해당하는 파일을 닫음 */
 		file_close(f);
 		thread_current()->fd_table[fd] = NULL;  /* 파일 디스크립터 테이블 해당 엔트리 초기화 */
-	}
+  }
+}
+
+/*filesys/file.c*/
+void
+file_close (struct file *file) 
+{
+  if (file != NULL)
+    {
+      file_allow_write (file);
+      inode_close (file->inode);
+      free (file); 
+    }
 }
 ```
->
+> File Descriptor에 해당하는 file을 process_get_file함수로 찾은 후, file_close하여 이를 닫는다. 이후, File Descriptor 테이블에 해당 엔트리를 null로 초기화시켜준다.
 
 이렇게 Syscall Handler를 완성하여 System Calls을 해결할 수 있다.
 
 # **III. Implementation of Denying Write to Executables**
 
 ## **Analysis**
+해당 문제는 실행 중인 파일에 write하는 것을 방지하는 것을 목표로 한다. 수업시간에 진행한 Reader-Writer Problem(CSED312 Lecture Note 4: Synchronization 2; p.33~34)과 같은 맥락이다. 실행중인 파일에서 Writer가 파일의 데이터를 변경한다면 예상치 못한 결과를 얻을 수 있다. Mutex를 직접 구현하여 과제를 수행하려 했으나 pintOS에 내제되어 있는 유용한 method가 있어 이를 이용하여 구현하고자 한다.
 
-세 개의 thread가 있을 때, 각각의 thread의 priority를 비교하여 가장 높은 thread가 H, 다음이 M, 가장 작은 thread를 L이라 하자. 이때, H가 lock을 요청했을때 이에 대한 lock이 L의 소유일 경우 H가 L에게 점유를 넘겨주면 L보다 우선순위가 높은 M이 점유권을 먼저 선점하게 되어 M L H 순서로 thread가 마무리 되는데, 이렇게 되면  M이 H보다 우선순위가 낮음에도 불구하고 먼저 실행되는 문제가 생긴다. 이를 priority inversion라고 한다.
+  ```cpp
+  /* Prevents write operations on FILE's underlying inode
+   until file_allow_write() is called or FILE is closed. */
+  void file_deny_write (struct file *file) 
+  {
+    ASSERT (file != NULL);
+    if (!file->deny_write) 
+    {
+      file->deny_write = true;
+      inode_deny_write (file->inode);
+    }
+  }
 
-이를 해결하는 방법으로 priority donation이 있다. 이는 H가 자신이 가진 priority를 L에게 일시적으로 넘겨 동등한 priority조건에서 점유하도록하여, 위와 같은 문제가 생기지 않도록 하는 방법이다.
-아래는 pintOS에서 제공하는 두 가지 donation과 관련된 문제이다.
+  /* Re-enables write operations on FILE's underlying inode.
+   (Writes might still be denied by some other file that has the
+   same inode open.) */
+  void file_allow_write (struct file *file) 
+  {
+    ASSERT (file != NULL);
+    if (file->deny_write) 
+    {
+      file->deny_write = false;
+      inode_allow_write (file->inode);
+    }
+  }
+  ```
+
+> 위 method의 주석을 보면, file_deny_write는 말 그대로 write를 거부하는 method이다. File struct에 deny_write라는 boolean value가 있는데, file_deny_write가 call 되었다면 해당 값을 true로 assign하고, file_allow_write를 call하면 해당 값이 false로 assign된다. 즉, 이를 이용하여 일종의 Mutex를 실현하고 잇는 것이다. 그렇다면 이 method를 call해야 할 때는 언제인지 알아보자. File write를 막아야 할 때는 이미 load를 하였을 때이다. 따라서 load에서 file을 open하고 나서 file_deny_write()를 호출한다. 이후, file이 close 될 때 이를 풀어주기 위해 file_allow_write를 호출해준다.
 
 ## **Brief Algorithm**
-
-초기 priority를 뜻하는 origin_priority 및 donation list, wait중인 lock에 대한 변수 등을 thread에 추가한다.
-priority를 donate하는 함수와, 기존의 priority로 reset시키는 함수를 구현해야하며, lock_acquire될 때 조건에 따라 donation이 진행되고, lock_release될 때 reset이 진행되도록 한다. 이때 priority값 뿐만아니라 donation list, wait lock에 대한 값도 함께 수정해주어야한다.
-
-</br></br></br></br></br></br></br></br></br></br></br></br></br>
+File이 open되는 지점인 load 함수에서 file_deny_write()를 호출하고, file이 close 될 때 file_allow_write를 호출해 다시 권한을 넘긴다.
 
 ## **Implementation**
 
-- origin_priority 및 donation list, wait중인 lock에 대한 변수 등을 thread에 추가하고, 초기화하였다.
+- load함수에서 file이 open 후 시점에 file_deny_write을 호출한다.
 
-```cpp
-//threads/thread.h
-struct thread
-{
-    ...
-   int origin_priority;             //donation이전의 기존 priority
-   struct list donation_list;       //thread에 priority를 donate한 thread들의 list
-   struct list_elem donation_elem;  //위 list를 관리하기 위한 element
-   struct lock *wait_lock;          //이 lock이 release될 때까지 thread는 기다린다.
-    ...
-}
-```
-
-```cpp
-//threads/thread.c
-static void
-init_thread (struct thread *t, const char *name, int priority)
-{
+  ```cpp
+  /*userprog/process.c*/
+  struct lock lock_file;
   ...
-  t->origin_priority = priority;
-  list_init(&t->donation_list);
-  t->wait_lock = NULL;
-  ...
-}
-```
+  bool
+  load (const char *file_name, void (**eip) (void), void **esp) 
+  {
+    ...
+    lock_acquire(&lock_file); /* 락 획득 */
+    /* Open executable file. */
+    file = filesys_open (file_name);
+    if (file == NULL) 
+      {
+        lock_release(&lock_file);/* 락 해제 */
+        printf ("load: %s: open failed\n", file_name);
+        goto done; 
+      }
+    
+    t->file_run = file;    /* thread 구조체의 run_file을 현재 실행할 파일로 초기화 */
+    file_deny_write(file);  /* file_deny_write()를 이용하여 파일에 대한 write를 거부 */
 
-- priority를 donate하는 함수(donate_priority)와, 기존의 priority로 reset시키는 함수(reset_priority)를 구현하였다.
+    lock_release(&lock_file);/* 락 해제 */
+    ...
+  }
+  ```
+  > file을 open한 후 file_deny_write를 함수를 호출하여, 해당 파일이 close되기 전까지는 write가 되지 않도록 구현하였다. 이때 이 과정은 Atomic하게 이루어져야하기 때문에 lock_file이라는 lock을 생성하여 file open과 file_deny_write의 과정을 lock으로 묶어준다.
 
+- file을 close하는 file_close 함수안에 이미 file_allow_write가 구현되어있어 이 부분은 추가적인 구현을 하지 않아도 된다.
 
+  ```cpp
+  void file_close (struct file *file) 
+  {
+    if (file != NULL)
+      {
+        file_allow_write (file);
+        inode_close (file->inode);
+        free (file); 
+      }
+  }
+  ```
 
 # **Discussion**
 ## 1. ROX TEST
