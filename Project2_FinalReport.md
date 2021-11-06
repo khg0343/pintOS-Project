@@ -729,7 +729,7 @@ File이 open되는 지점인 load 함수에서 file_deny_write()를 호출하고
   ```
   > file을 open한 후 file_deny_write를 함수를 호출하여, 해당 파일이 close되기 전까지는 write가 되지 않도록 구현하였다. 이때 이 과정은 Atomic하게 이루어져야하기 때문에 lock_file이라는 lock을 생성하여 file open과 file_deny_write의 과정을 lock으로 묶어준다.
 
-- file을 close하는 file_close 함수안에 이미 file_allow_write가 구현되어있어 이 부분은 추가적인 구현을 하지 않아도 된다.
+- file을 close하는 file_close 함수안에 이미 file_allow_write하는 부분이 구현되어있어 이 부분은 추가적인 구현을 하지 않아도 된다.
 
   ```cpp
   void file_close (struct file *file) 
