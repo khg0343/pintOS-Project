@@ -148,43 +148,37 @@ bffffff0  fe ff ff bf 00 00 00 00-00 65 63 68 6f 00 78 00 |.........echo.x.|
 </br></br></br></br></br></br></br></br></br></br></br></br>
 </br></br></br></br></br></br></br></br></br></br></br></br>
 
-# **II. Implementation of System Calls**
+# **II. Implementation of System Calls & Process Termination Messages**
 
 ## **Analysis**
 
-현재 구현되어 있는 thread 구조체에 member 변수로 priority가 있다. 이를 어떻게 사용하는지 알아보기 위해 Scheduling이 실행되는 yield, unblock 함수를 살펴보자.
-
+> 현재 pintOS에는 System call을 발생시키는 도구는 구현이 되어있지만, System call이 발생해서 각각의 수행해야 하는 기능은 구현되어 있지 않다. 현재 구현되어 있는 사항은 각 System call의 Number와 Argument 개수에 따른 System call의 Macro 뿐이다. 
 ```cpp
-void thread_unblock (struct thread *t) 
-{
-    enum intr_level old_level;
-    ASSERT (is_thread (t));
-    old_level = intr_disable ();
-    ASSERT (t->status == THREAD_BLOCKED);
-    list_push_back (&ready_list, &t->elem);
-    t->status = THREAD_READY;
-    intr_set_level (old_level);
-}  
+/**/
+/* Invokes syscall NUMBER, passing argument ARG0, and returns the
+   return value as an `int'. */
+#define syscall1(NUMBER, ARG0)                                           \
+        ({                                                               \
+          int retval;                                                    \
+          asm volatile                                                   \
+            ("pushl %[arg0]; pushl %[number]; int $0x30; addl $8, %%esp" \
+               : "=a" (retval)                                           \
+               : [number] "i" (NUMBER),                                  \
+                 [arg0] "g" (ARG0)                                       \
+               : "memory");                                              \
+          retval;                                                        \
+        })
 
-void thread_yield (void) 
+/*userprog/syscall.c*/
+static void
+syscall_handler (struct intr_frame *f UNUSED) 
 {
-    struct thread *cur = thread_current ();
-    enum intr_level old_level;
-    ASSERT (!intr_context ());
-    old_level = intr_disable ();
-    if (cur != idle_thread) 
-        list_push_back (&ready_list, &cur->elem);
-    cur->status = THREAD_READY;
-    schedule();
-    intr_set_level (old_level);
+  printf ("system call!\n");
+  thread_exit ();
 }
-```
+```cpp
 
-list_push_back을 통해, priority는 고려하지 않고 들어오는 순서대로 ready_list에 뒤에 넣는 것을 볼 수 있다. 이제 Priority를 고려하여 ready_list에 넣고자 한다.
-
-## **Brief Algorithm**
-
-Scheduling시에 Priority를 고려하여 ready_list에 넣는다. 또한, thread를 create하거나 priority를 재설정 하였을 때 현재 실행되고 있는 thread의 priority와 비교하여 더 높다면 즉시 yield한다.
+> 이를 이용해서 기능을 구현해야 한다. Syscall macro를 통해 User stack에 push된 System call Argument들에 대한 정보를 통해 System call을 수행한다. 이때 stack에 입력된 정보들을 읽기 위해 stack pointer를 통해 Argument를 pop하고, 해당 System call number에 대한 기능을 수행하는 과정을 구현하여야한다.
 
 </br></br></br></br></br></br></br></br>
 
@@ -239,14 +233,14 @@ thread_create (const char *name, int priority,
   ...
 }
 ```
-> parent : </br>
-> child_elem : </br>
-> child_list : </br>
-> isLoad : </br>
-> isExit: </br>
-> sema_exit : </br>
-> sema_load : </br>
-> exit_status : </br>
+> parent : 현재 생성된 Process는 thread_create를 호출 한 thread_current()가 부모 process이다. 따라서, 생성된 Process의 부모를 담고 있는 member variable이다.</br>
+> child_elem : thread를 다루는 방식과 동일하게, child thread들을 관리하기 위해 넣은 member이다. </br>
+> child_list : thread를 다루는 방식과 동일하게, child thread들을 담고 있는 member이다.</br>
+> isLoad : .</br>
+> isExit:  </br>
+> sema_exit : wait <-> exit 과정 중 process의 synchronization을 맞추기 위한 semaphore이다.  </br>
+> sema_load : execute <-> start <-> load 과정 중 process의 synchronization을 맞추기 위한 semaphore이다.</br>
+> exit_status : Parent Process가 Child Process의 종료가 어떠한 방식으로 종료되었는지 알기 위해 exit status를 담는 variable이다. 이를 바탕으로 synchornization, process termiantion message 등을 처리한다.  </br>
 
 > fd_table : </br>
 > fd_nxt: </br>
