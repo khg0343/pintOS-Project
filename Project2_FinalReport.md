@@ -14,14 +14,14 @@
 
 현재 pintOS의 Argument Passing은 구현되어 있지 않다. pintos –q run ‘echo x’ 라는 명령어를 입력하면 ‘echo x’라는 argument들을 메모리에 쌓아 process가 이를 활용할 수 있도록 해야하는데, 이러한 기능이 구현되어 있지 않은 것이다. 궁극적으로, 이번 Implementation of Argument Passing은 문자열로 들어온 total argument들을 공백을 기준으로 구분해서 메모리에 쌓는 것을 목적으로 한다. 
 
-## Brief Algorithm
+## **Brief Algorithm**
 
 - Process_execute()가 실행되면 file_name의 첫 부분(token이라 명명)을 thread_create에 첫번째 인자로 넘긴다. 
 - Start_process에서 load를 호출한다. 이때, load의 첫번째 parameter를 file_name의 첫번째 token을 넘긴다.
 - Load()가 success를 return하면 construct_esp(file_name,&if_.esp)를 호출하여 메모리에 argument, address of argument, return address를 넣는다.
 
 
-## Implementation
+## **Implementation**
 
 - process_execute() 변경 사항이다.
   
@@ -194,8 +194,8 @@ struct thread
         struct semaphore sema_load;/* load 세마포어 */
         int exit_status;/* exit 호출 시 종료 status */
 
-        struct file **fd_table; /* file descriptor 테이블 */
-        int fd_nxt;             /* 현재 테이블에 존재하는 fd값의 최대값 + 1 */
+        struct file **fd_table; /* file descriptor table */
+        int fd_nxt;             /* 현재 table에 존재하는 fd값의 최대값 + 1 */
 
         struct file *file_run;   /* 현재 실행중인 file 추가 */
     #endif
@@ -218,27 +218,29 @@ thread_create (const char *name, int priority,
     list_push_back(&(running_thread()->child_list), &(t->child_elem));/* child 리스트에 추가 */
 
     t->fd_nxt = 2;/* fd 값 초기화(0,1은 표준 입력,출력) */
-    t->fd_table = palloc_get_page(PAL_ZERO); /* File Descriptor 테이블에 메모리 할당 */
+    t->fd_table = palloc_get_page(PAL_ZERO); /* File Descriptor table에 메모리 할당 */
     if(t->fd_table == NULL) return TID_ERROR;
   #endif
   ...
 }
 ```
-> parent : 현재 생성된 Process는 thread_create를 호출 한 thread_current()가 부모 process이다. 따라서, 생성된 Process의 부모를 담고 있는 member variable이다.</br>
+> parent : 현재 생성된 Process는 thread_create를 호출한 thread_current()가 부모 process이다. 따라서, 생성된 Process의 부모를 담고 있는 member variable이다.</br>
 > child_elem : thread를 다루는 방식과 동일하게, child thread들을 관리하기 위해 넣은 member이다. </br>
 > child_list : thread를 다루는 방식과 동일하게, child thread들을 담고 있는 member이다.</br>
-> isLoad : </br>
-> isExit:  </br>
+> isLoad : process의 프로그램이 메모리에 load되었는지 확인하는 변수이다.</br>
+> isExit: process기 exit되었는지 확인하는 변수이다. </br>
 > sema_exit : wait <-> exit 과정 중 process의 synchronization을 맞추기 위한 semaphore이다.  </br>
 > sema_load : execute <-> start <-> load 과정 중 process의 synchronization을 맞추기 위한 semaphore이다.</br>
 > exit_status : Parent Process가 Child Process의 종료가 어떠한 방식으로 종료되었는지 알기 위해 exit status를 담는 variable이다. 이를 바탕으로 synchornization, process termiantion message 등을 처리한다.  </br>
 
-> fd_table : </br>
-> fd_nxt: </br>
-> file_run : </br>
+> fd_table : file descriptor table이다.</br>
+> fd_nxt: file descriptor table의 최대값 + 1이며, fd_table에 file을 추가하는 등의 관리에 유용하게 사용된다.</br>
+> file_run : 현재 실행되고 있는 file을 저장한다.</br>
 
 ### **Syscall Handler**
+
 - syscall handler에 필요한 함수들을 구현하였다.
+
 ```cpp
 bool check_address(void *addr)
 {
@@ -246,7 +248,9 @@ bool check_address(void *addr)
   else return false;
 }
 ```
+
 > 주소 값이 user 영역에서 사용하는 address 값인지 확인하는 함수이다. 즉, 유효한 주소인지 threads/vaddr.h의 is_user_vaddr함수를 사용하여 확인한 후 그 결과를 return한다.
+
 ```cpp
 void get_argument(void *esp, int *arg, int count){
   int i;
@@ -256,9 +260,42 @@ void get_argument(void *esp, int *arg, int count){
   }
 }
 ```
+
 > user stack에 있는 인자들을 kernel에 저장하는 함수이다. argument를 esp에서 pop하여 arg에 저장한다. system call마다 요구하는 개수가 달라 이를 syscall handler에서 count값을 지정하여 호출하고, 이를 통해 저장된 값을 이용하여 system call을 수행한다.
 
-</br></br>
+```cpp
+struct thread *get_child_process (pid_t pid)
+{
+  struct list_elem *e;
+  struct list *child_list = &thread_current()->child_list;
+  struct thread *thrd;
+  /* 자식 리스트에 접근하여 프로세스 descriptor 검색 */
+  for (e = list_begin (child_list); e != list_end (child_list); e = list_next (e))
+  {
+    thrd = list_entry(e, struct thread, child_elem);
+    if(thrd->tid == pid) /* 해당 pid가 존재하면 프로세스 descriptor return */
+      return thrd;
+  }
+  return NULL; /* 리스트에 존재하지 않으면 NULL return */
+}
+```
+
+> child process를 pid를 통해 검색하고 그 process descriptor를 return하는 함수이다. child_list에서 해당 pid와 같은 process descriptor를 return한다. child_list에 해당 pid가 존재하지 않을 경우 null을 return한다.
+
+```cpp
+void remove_child_process(struct thread *cp)
+{
+  if(cp != NULL)
+  {
+    list_remove(&(cp->child_elem));  /* 자식 리스트에서 제거*/
+    palloc_free_page(cp);           /* 프로세스 descriptor 메모리 해제 */
+  }
+}
+```
+
+> child process를 제거하는 함수이다. 해당 child process를 list에서 제거하고, 해당 process의 메모리를 해제한다.
+
+</br>
 
 - 위의 함수들을 이용하여 syscall handler를 구현하였다.
 
@@ -290,7 +327,7 @@ syscall_handler (struct intr_frame *f )
       break;
     case SYS_REMOVE:
       get_argument(f->esp + 4, &argv[0], 1);
-	  f->eax=remove((const char *)argv[0]);
+    f->eax=remove((const char *)argv[0]);
       break;
     case SYS_OPEN:
       get_argument(f->esp + 4, &argv[0], 1);
@@ -298,7 +335,7 @@ syscall_handler (struct intr_frame *f )
       break;
     case SYS_FILESIZE:
       get_argument(f->esp + 4, &argv[0], 1);
-	  f->eax = filesize(argv[0]);
+    f->eax = filesize(argv[0]);
       break;
     case SYS_READ:
       get_argument(f->esp + 4, &argv[0], 3);
@@ -310,15 +347,15 @@ syscall_handler (struct intr_frame *f )
       break;
     case SYS_SEEK:
       get_argument(f->esp + 4, &argv[0], 2);
-	  seek(argv[0],(unsigned)argv[1]);
+    seek(argv[0],(unsigned)argv[1]);
       break;
     case SYS_TELL:
       get_argument(f->esp + 4, &argv[0], 1);
-	  f->eax = tell(argv[0]);
+    f->eax = tell(argv[0]);
       break;
     case SYS_CLOSE:
       get_argument(f->esp + 4, &argv[0], 1);
-	  close(argv[0]);
+    close(argv[0]);
       break;
     default :
       exit(-1);
@@ -365,7 +402,7 @@ thread_exit (void)
   ...
 }
 ```
-> thread_exit()에서는 process_exit()를 통해 process를 종료시킨다. wait()에서 parent process는 child가 종료될 때까지 대기하게 되는데, 이때 sema_down해 뒀던 sema_exit이라는 semaphore를 sema_up하면서 대기하고 있던 부모 process에 child의 종료를 알린다.
+> thread_exit()에서는 process_exit()를 통해 process를 종료시킨다. System Call wait()에서 parent process는 child가 종료될 때까지 대기하게 되는데, 이때 sema_down해 뒀던 sema_exit이라는 semaphore를 sema_up하면서 대기하고 있던 부모 process에 child의 종료를 알린다.
 
 #### **exec**
 ```cpp
@@ -377,13 +414,30 @@ exec (const char *file)
   if(pid == -1)  return -1;
 	child = get_child_process(pid); /* 생성된 child process의 process descriptor를 검색 */
   sema_down(&(child->sema_load));   /* child process의 프로그램이 load될 때까지 대기 */   
-	if(child->isLoad) return pid;   /* 프로그램 load 성공 시 child process의 pid 리턴 */ 
-	else		return -1;          /* 프로그램 load 실패 시 -1 리턴 */
+	if(child->isLoad) return pid;   /* 프로그램 load 성공 시 child process의 pid return */ 
+	else		return -1;          /* 프로그램 load 실패 시 -1 return */
 
 }
 ```
 > child process를 생성하고 프로그램을 실행시키는 System Call이다. userprog/process.c의 process_execute()를 통해 child process를 생성하고, sema_load라는 semaphore를 이용하여 child process의 응용 프로그램이 load 될 때까지 대기한다. </br>
 > 프로그램 load 성공 시 생성된 process의 pid 값을 return, 실패 시 -1을 return한다.
+
+```cpp
+static void
+start_process (void *file_name_)
+{
+  ...
+  success = load (cmd_name, &if_.eip, &if_.esp);
+
+  thread_current()->isLoad = success;
+  if(success){
+    construct_esp(file_name, &if_.esp);
+  }
+  sema_up(&thread_current()->sema_load);
+  ...
+}
+```
+> child process관점에서 봤을때 start process에서 program이 load된 이후, load가 성공 여부를 isLoad에 저장하고, sema_load를 다시 sema_up하여 parent의 대기를 해제시킨다.
 
 #### **wait**
 ```cpp
@@ -421,9 +475,10 @@ process_wait (tid_t child_tid)
   return -1;
 }
 ```
-> wait System call에서 호출하는 process_wait이다. 기본적으로 어떠한 프로세스가 Wait을 호출한다는 것은 그 프로세스의 Child process의 종료를 기다리는 것이다. 따라서 parent 포인터를 thread_current()로 지정한다. Parent의 Child list를 순회하기 전에, 넘겨 받은 tid 값으로 이 프로세스가 존재하는지 여부를 판단해서 있으면 순회 code로 진입하고, 없다면 -1을 return한다. For문으로 list에 있는 child_list에 있는 thread를 비교한다. 비교 기준은 그 child process가 가지고 있는 tid값을 비교한다. 일치한다면 child process의 exit semaphore를 down시켜 종료 될때까지 기다린다. 이후 exit에서 sema_up을 호출하면 이 프로세스는 종료된 것이므로 이 child process가 어떠한 과정으로 종료되었는지에 대한 정보를 담고있는 status 값을 저장한다. 이후, 해당 child process를 제거한다. 저장한 status 값을 return 하며, 해당하는 child가 없다면 마찬가지로 -1을 return 한다. process_wait()은 기본적으로 system call : wait에서 쓰이지만, process_execute에서 마지막 부분에도 call하게 code를 작성하였다. 그 이유는 child process가 load되기 전에 parent process가 dying된다면 이 child process에 대하여 처리를 해줄 수가 없다. 이는 OS에서 메모리 누수를 못 잡는 것이 되므로 이를 처리해주기 위해 process_execute에서 wait을 호출한다. 
+> wait System call에서 호출하는 process_wait이다. 기본적으로 어떠한 프로세스가 Wait을 호출한다는 것은 그 프로세스의 Child process의 종료를 기다리는 것이다. 따라서 parent 포인터를 thread_current()로 지정한다. Parent의 Child list를 순회하기 전에, 넘겨 받은 tid 값으로 이 프로세스가 존재하는지 여부를 판단해서 있으면 순회 code로 진입하고, 없다면 -1을 return한다. For문으로 list에 있는 child_list에 있는 thread를 비교한다. 비교 기준은 그 child process가 가지고 있는 tid값을 비교한다. 일치한다면 child process의 exit semaphore를 down시켜 종료 될때까지 기다린다. 이후 exit에서 sema_up을 호출하면 이 프로세스는 종료된 것이므로 이 child process가 어떠한 과정으로 종료되었는지에 대한 정보를 담고있는 status 값을 저장한다. 이후, 해당 child process를 제거한다. 저장한 status 값을 return 하며, 해당하는 child가 없다면 마찬가지로 -1을 return 한다. process_wait()은 기본적으로 system call : wait에서 쓰이지만, process_execute에서 마지막 부분에도 call하게 code를 작성하였다. 그 이유는 child process가 load되기 전에 parent process가 dying된다면 이 child process에 대하여 처리를 해줄 수가 없다. 이는 OS에서 메모리 누수를 못 잡는 것이 되므로 이를 처리해주기 위해 process_execute에서 wait을 호출한다.
 
 #### **create**
+
 ```cpp
 bool
 create (const char *file, unsigned initial_size)
@@ -432,9 +487,11 @@ create (const char *file, unsigned initial_size)
   return filesys_create(file, initial_size); /* file 이름과 크기에 해당하는 file 생성 및 성공 여부 return */
 }
 ```
+
 > file을 생성하는 System Call이다. 생성할 file의 이름과 크기에 대한 정보를 통해 filesys/filesys.c의 filesys_create함수를 이용하여 file을 생성하고, 성공 여부를 return한다. file이 null일 경우 exit을 통해 process를 종료한다.
 
 #### **remove**
+
 ```cpp
 bool
 remove (const char *file)
@@ -442,6 +499,7 @@ remove (const char *file)
   return filesys_remove(file);  /* file 이름에 해당하는 file을 제거 및 성공 여부 return*/
 }
 ```
+
 > file을 삭제하는 System Call이다. 삭제할 file에 대한 정보를 통해 filesys/filesys.c의 filesys_remove함수를 이용하여 file을 삭제하고, 성공여부를 return한다.
 
 
@@ -462,10 +520,10 @@ open (const char *file)
 	if(f != NULL) { 
 		fd = process_add_file(f);     /* 해당 file 객체에 file descriptor 부여 */
     lock_release(&lock_file);
-		return fd;                        /* file descriptor 리턴 */
+		return fd;                        /* file descriptor return */
 	}
   lock_release(&lock_file);
-	return -1; /* 해당 file이 존재하지 않으면 -1 리턴 */
+	return -1; /* 해당 file이 존재하지 않으면 -1 return */
 }
 ```
 > file을 open할 때 쓰이는 system call이다. 넘어온 file명이 NULL Pointer라면 exit(-1)을 호출하여 비정상적으로 종료되었음을 알린다. 이번 과제에서 본 조는 한 process가 file에 대해 점유하고 있으면 다른 process는 접근을 못하게 하는 방식으로 synchronization을 구현하였다. 따라서, lock_file이라는 lock으로 lock을 얻는다. 이후, file을 찾아 open하고, 해당 file 객체에 file descriptor를 부여한다. 이후, lock을 해제하고 해당 file descriptor을 return한다. file이 없다면 lock을 해제하고 -1을 return 하여 비정상적으로 종료되었음을 알린다.
@@ -475,27 +533,28 @@ int process_add_file (struct file *f)
 {
   int fd = thread_current()->fd_nxt;
 
-  thread_current()->fd_table[fd] = f; /* 파일 객체를 파일 디스크립터 테이블에 추가*/
-  thread_current()->fd_nxt++; /* 파일 디스크립터의 최대값 1 증가 */
+  thread_current()->fd_table[fd] = f; /* file 객체를 file descriptor table에 추가*/
+  thread_current()->fd_nxt++; /* file descriptor의 최대값 1 증가 */
 
-  return fd;  /* 파일 디스크립터 리턴 */
+  return fd;  /* file descriptor return */
 }
 ```
-> 위에서 쓰이는 추가로 구현한 method이다. 해당 thread의 file descriptor table에 파일 객체를 추가하고, file descriptor의 count를 1 늘려준다. 이후, file desrciptor를 return한다.
+> 위에서 쓰이는 추가로 구현한 method이다. 해당 thread의 file descriptor table에 file 객체를 추가하고, file descriptor의 count를 1 늘려준다. 이후, file desrciptor를 return한다.
 
 #### **filesize**
+
 ```cpp
 int
 filesize (int fd) 
 {
 	struct file *f;
 	if((f = process_get_file(fd))) { /* file descriptor를 이용하여 file 객체 검색 */
-		return file_length(f); /* 해당 file의 길이를 리턴 */
+		return file_length(f); /* 해당 file의 길이를 return */
 	}
-	return -1;  /* 해당 file이 존재하지 않으면 -1 리턴 */
+	return -1;  /* 해당 file이 존재하지 않으면 -1 return */
 }
-
 ```
+
 > filesize를 얻는 System call이다. 아래에서 후술 할 process_get_file을 이용해 file 객체를 검색한다. 검색을 통해 얻은 file의 length를 return한다. 해당 file이 없으면 -1을 return한다.
 
 ```cpp
@@ -504,10 +563,10 @@ struct file *process_get_file(int fd)
   struct file *f;
 
   if(fd < thread_current()->fd_nxt) {
-		f = thread_current()->fd_table[fd]; /* 파일 디스크립터에 해당하는 파일 객체를 리턴 */
+		f = thread_current()->fd_table[fd]; /* file descriptor에 해당하는 file 객체를 return */
 		return f;
 	}
-	return NULL; /* 없을 시 NULL 리턴 */
+	return NULL; /* 없을 시 NULL return */
 }
 ```
 > thread structure에 구현되어 있는 file descriptor table을 이용하여 file을 찾는다. 위에서 open system call 과정 중 file을 추가 할 때 fd_nxt의 최대값을 1씩 늘려주었으므로, 이를 기준으로 fd_nxt보다 작으면 해당 fd는 vaild한 값이므로 file descriptor table에서 file 객체를 return한다. 존재하지 않는다면 NULL을 return 한다.
@@ -524,7 +583,7 @@ read (int fd, void *buffer, unsigned size)
     
 	lock_acquire(&lock_file); /* file에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
-	if(fd == 0) {   /* file descriptor가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 리턴 */
+	if(fd == 0) {   /* file descriptor가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 return */
     unsigned int i;
     for(i = 0; i < size; i++) {
        if (((char *)buffer)[i] == '\0') break;
@@ -532,7 +591,7 @@ read (int fd, void *buffer, unsigned size)
     read_size = i;
 	} else {
 		if((f = process_get_file(fd))) 
-      read_size = file_read(f,buffer,size);  /* file descriptor가 0이 아닐 경우 file의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
+      read_size = file_read(f,buffer,size);  /* file descriptor가 0이 아닐 경우 file의 데이터를 크기만큼 저장 후 읽은 바이트 수를 return */
 	}
 
 	lock_release(&lock_file); /* file에 동시 접근이 일어날 수 있으므로 Lock 사용 */
@@ -540,7 +599,7 @@ read (int fd, void *buffer, unsigned size)
 	return read_size;
 }
 ```
-> System call : read이다. 이 System call은 먼저 file에 대한 lock을 얻는다. 다른 프로세스의 접근을 막기 위해서이다. 두 가지 케이스로 나뉘는데, file descripotr가 0 (표준 입력)인 경우와 그것이 아닌 경우이다. 표준입력인 경우 키보드 입력을 버퍼에 저장 후, '\0'이 들어온다면 break를 걸어 저장된 버퍼의 크기를 return 한다. 만약 표준 입력이 아닌 다른 file descriptor라면 해당 file을 읽은 후 읽은 크기 만큼 저장 한다음 이를 return 한다. 모두 return 이전에 점유하고 있는 lock을 해제한다.
+> file의 data를 read하는 System Call이다. 이 System call은 먼저 file에 대한 lock을 얻는다. 다른 프로세스의 접근을 막기 위해서이다. 두 가지 케이스로 나뉘는데, file descripotr가 0 (표준 입력)인 경우와 그것이 아닌 경우이다. 표준입력인 경우 키보드 입력을 버퍼에 저장 후, '\0'이 들어온다면 break를 걸어 저장된 버퍼의 크기를 return 한다. 만약 표준 입력이 아닌 다른 file descriptor라면 해당 file을 읽은 후 읽은 크기 만큼 저장 한다음 이를 return 한다. 모두 return 이전에 점유하고 있는 lock을 해제한다.
 
 #### **write**
 ```cpp
@@ -552,10 +611,10 @@ write (int fd, const void *buffer, unsigned size)
 
 	lock_acquire(&lock_file); /* file에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
-	if(fd == 1) { /* file descriptor가 1일 경우(STDOUT) 버퍼에 저장된 값을 화면에 출력후 버퍼의 크기 리턴 (putbuf() 이용) */
+	if(fd == 1) { /* file descriptor가 1일 경우(STDOUT) 버퍼에 저장된 값을 화면에 출력후 버퍼의 크기 return (putbuf() 이용) */
 		putbuf(buffer, size);
 		write_size = size;
-	} else {    /* file descriptor가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 file에 기록후 기록한 바이트 수를 리턴 */
+	} else {    /* file descriptor가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 file에 기록후 기록한 바이트 수를 return */
 		if((f = process_get_file(fd)))
 			write_size = file_write(f,(const void *)buffer, size);
 	}
@@ -565,7 +624,7 @@ write (int fd, const void *buffer, unsigned size)
 	return write_size;
 }
 ```
-> System call : write이다. 이 System call도 read와 마찬가지로 표준 출력 (file descriptor = 1)과 그 외의 경우로 나뉜다. 표준 출력일 경우 버퍼에 저장된 값을 화면에 출력한 후 버퍼의 크기를 return한다. 표준 출력이 아니라면 버퍼에 저장된 데이터 크기만큼 해당 file에 기록 후 기록 된 크기를 return한다. 모두 return 이전에 점유하고 있는 lock을 해제한다.
+> file의 data에 write하는 System Call이다. 이 System call도 read와 마찬가지로 표준 출력 (file descriptor = 1)과 그 외의 경우로 나뉜다. 표준 출력일 경우 버퍼에 저장된 값을 화면에 출력한 후 버퍼의 크기를 return한다. 표준 출력이 아니라면 버퍼에 저장된 데이터 크기만큼 해당 file에 기록 후 기록 된 크기를 return한다. 모두 return 이전에 점유하고 있는 lock을 해제한다.
 
 #### **seek**
 ```cpp
@@ -575,7 +634,7 @@ seek (int fd, unsigned position)
 {
   struct file *f = process_get_file(fd); /* file descriptor를 이용하여 file 객체 검색 */
 
-  if(f != NULL) file_seek(f, position); /* 해당 열린 file의 위치(offset)를 position만큼 이동 */
+  if(f != NULL) file_seek(f, position); /* 해당 열린 file의 위치를 position만큼 이동 */
 }
 
 /*filesys/file.c*/
@@ -588,7 +647,7 @@ file_seek (struct file *file, off_t new_pos)
 }
 
 ```
-> 열린 파일의 위치를 이동시키는 System Call이다. file descriptor에 해당하는 파일을 찾고, file.c에 구현되어있는 file_seek을 이용하여 해당 file의 위치를 이동시킨다.
+> 열린 file의 위치를 이동시키는 System Call이다. file descriptor에 해당하는 file을 찾고, file.c에 구현되어있는 file_seek을 이용하여 해당 file의 위치를 이동시킨다.
 
 #### **tell**
 ```cpp
@@ -598,7 +657,7 @@ tell (int fd)
 {
   struct file *f = process_get_file(fd); /* file descriptor를 이용하여 file 객체 검색 */
 
-  if(f != NULL) return file_tell(f); /* 해당 file의 위치를 반환 */
+  if(f != NULL) return file_tell(f); /* 해당 file의 위치를 return */
   return 0; 
 }
 
@@ -611,7 +670,7 @@ file_tell (struct file *file)
 }
 
 ```
-> 열린 파일의 위치를 알려주는 System Call이다. file descriptor에 해당하는 파일을 찾고, file.c에 구현되어있는 file_tell을 이용하여 해당 file의 위치를 반환한다.
+> 열린 file의 위치를 알려주는 System Call이다. file descriptor에 해당하는 file을 찾고, file.c에 구현되어있는 file_tell을 이용하여 해당 file의 위치를 return한다.
 
 #### **close**
 ```cpp
@@ -622,7 +681,7 @@ close (int fd)
   process_close_file(fd);
 }
 ```
-> 열린 file을 닫는 System Call이다. userprog/process.c의 process_close_file()함수를 통해 file descriptor에 해당하는 파일을 닫고, 해당 file descriptor를 제거한다.
+> 열린 file을 닫는 System Call이다. userprog/process.c의 process_close_file()함수를 통해 file descriptor에 해당하는 file을 닫고, 해당 file descriptor를 제거한다.
 
 ```cpp
 /*userprog/process.c*/
@@ -630,9 +689,9 @@ void process_close_file(int fd)
 {
 	struct file *f;
 
-	if((f = process_get_file(fd))) {  /* 파일 디스크립터에 해당하는 파일을 닫음 */
+	if((f = process_get_file(fd))) {  /* file descriptor에 해당하는 file을 닫음 */
 		file_close(f);
-		thread_current()->fd_table[fd] = NULL;  /* 파일 디스크립터 테이블 해당 엔트리 초기화 */
+		thread_current()->fd_table[fd] = NULL;  /* file descriptor table 해당 엔트리 초기화 */
   }
 }
 
@@ -648,14 +707,14 @@ file_close (struct file *file)
     }
 }
 ```
-> File Descriptor에 해당하는 file을 process_get_file함수로 찾은 후, file_close하여 이를 닫는다. 이후, File Descriptor 테이블에 해당 엔트리를 null로 초기화시켜준다.
+> File Descriptor에 해당하는 file을 process_get_file함수로 찾은 후, file_close하여 이를 닫는다. 이후, File Descriptor table에 해당 엔트리를 null로 초기화시켜준다.
 
 이렇게 Syscall Handler를 완성하여 System Calls을 해결할 수 있다.
 
 # **III. Implementation of Denying Write to Executables**
 
 ## **Analysis**
-해당 문제는 실행 중인 파일에 write하는 것을 방지하는 것을 목표로 한다. 수업시간에 진행한 Reader-Writer Problem(CSED312 Lecture Note 4: Synchronization 2; p.33~34)과 같은 맥락이다. 실행중인 파일에서 Writer가 파일의 데이터를 변경한다면 예상치 못한 결과를 얻을 수 있다. Mutex를 직접 구현하여 과제를 수행하려 했으나 pintOS에 내제되어 있는 유용한 method가 있어 이를 이용하여 구현하고자 한다.
+해당 문제는 실행 중인 file에 write하는 것을 방지하는 것을 목표로 한다. 수업시간에 진행한 Reader-Writer Problem(CSED312 Lecture Note 4: Synchronization 2; p.33~34)과 같은 맥락이다. 실행중인 file에서 Writer가 file의 데이터를 변경한다면 예상치 못한 결과를 얻을 수 있다. Mutex를 직접 구현하여 과제를 수행하려 했으나 pintOS에 내제되어 있는 유용한 method가 있어 이를 이용하여 구현하고자 한다.
 
   ```cpp
   /* Prevents write operations on FILE's underlying inode
@@ -711,14 +770,14 @@ File이 open되는 지점인 load 함수에서 file_deny_write()를 호출하고
         goto done; 
       }
     
-    t->file_run = file;    /* thread 구조체의 run_file을 현재 실행할 파일로 초기화 */
-    file_deny_write(file);  /* file_deny_write()를 이용하여 파일에 대한 write를 거부 */
+    t->file_run = file;    /* thread 구조체의 run_file을 현재 실행할 file로 초기화 */
+    file_deny_write(file);  /* file_deny_write()를 이용하여 file에 대한 write를 거부 */
 
     lock_release(&lock_file);/* 락 해제 */
     ...
   }
   ```
-  > file을 open한 후 file_deny_write를 함수를 호출하여, 해당 파일이 close되기 전까지는 write가 되지 않도록 구현하였다. 이때 이 과정은 Atomic하게 이루어져야하기 때문에 lock_file이라는 lock을 생성하여 file open과 file_deny_write의 과정을 lock으로 묶어준다.
+  > file을 open한 후 file_deny_write를 함수를 호출하여, 해당 file이 close되기 전까지는 write가 되지 않도록 구현하였다. 이때 이 과정은 Atomic하게 이루어져야하기 때문에 lock_file이라는 lock을 생성하여 file open과 file_deny_write의 과정을 lock으로 묶어준다.
 
 - file을 close하는 file_close 함수안에 이미 file_allow_write하는 부분이 구현되어있어 이 부분은 추가적인 구현을 하지 않아도 된다.
 
@@ -736,7 +795,7 @@ File이 open되는 지점인 load 함수에서 file_deny_write()를 호출하고
 
 # **Discussion**
 ## 1. ROX TEST
-> 위 Test를
+> rox test는 앞의 Denying Write to Executables의 한 부분이다. 즉, 실행파일에 write가 되지 않도록 막아야하는 것이 문제인데, 이 test가 쉽게 통과되지 않았다. 즉, 처음 design했던 load와 file close에서만 allow와 deny를 처리해주면 해결될 것이라 생각했지만 해결되지 않아, file write의 근본인 file open쪽을 보았다.
 
 ```cpp
 int
@@ -748,29 +807,24 @@ open (const char *file)
   if (file == NULL) exit(-1);
 
   lock_acquire(&lock_file); 
-  f = filesys_open(file); /* 파일을 open */
+  f = filesys_open(file);
   if (strcmp(thread_current()->name, file) == 0) file_deny_write(f);  /*ROX TEST*/
   
 	if(f != NULL) { 
-		fd = process_add_file(f);     /* 해당 파일 객체에 파일 디스크립터 부여 */
+		fd = process_add_file(f);
     lock_release(&lock_file);
-		return fd;                        /* 파일 디스크립터 리턴 */
+		return fd;
 	}
   lock_release(&lock_file);
-	return -1; /* 해당 파일이 존재하지 않으면 -1 리턴 */
+	return -1;
 }
 ```
 
-> 위 코드가 수정 전의 timer interrupt method이다. Recent_cpu와 load_avg의 call 순서를 보면 막연히 공식 문서에 나온 순서대로 call을 한 것을 볼 수 있다. 그렇지만, 각각의 값에 대한 계산식을 생각해보면 load_avg를 먼저 call하여 계산을 진행하고 recent_cpu를 호출해야 올바르다고 할 수 있다. 그 이유는 recent_cpu의 계산값이 load_avg에 영향을 받기 때문이다. 반면, load_avg는 그렇지 않다. 이에 따라 다음과 같이 코드를 수정하였다. 그 결과 문제가 모두 해결되었다.
+> 위와 같이 file의 이름과 thread의 이름이 같을 경우, 즉 현재 해당 file이 실행 중일 경우 write가 되면 안되기 때문에, 이 file에 대해 deny write를 걸어주었다. 이렇게 deny를 처리하고 나니, rox test를 통과할 수 있었다.
 
-```cpp
-if(!(ticks % TIMER_FREQ)){
-    mlfqs_load_avg();  
-    mlfqs_recent_cpu();          
-}
-```
 ## 2. Sync-read & write Test
 > 다른 test들과 달리 처리가 잘 안되던 test 중 하나이다. 특히 처리가 어려웠던 이유는 read / write test라 해서 read / write system call 쪽을 디버깅 하고 있었지만 실제 문제는 오히려 wait에서 발생했기 때문이다. wait <-> exit에서 synchronization 문제를 해결하기 위해 semaphore를 이용하였는데, 계속 semaphore를 넣을 때 list에 대한 kernel panic이 발생하였다. 이유는 exec에서 sema_down이였다. Semaphore를 down시킬 때 그 주체가 잘못 되었던 것이다. Down 시켜야 하는 process는 child process인데, exec를 부른 Parent process에서 Semaphore를 down 시키려니 kernel panic이 발생하였다. sema_down을 child로 지정하여 처리하였더니 pass처리가 되었다. 아래는 해당 코드이다.
+
 ```cpp
 pid_t
 exec (const char *file)
@@ -784,8 +838,10 @@ exec (const char *file)
 	else		return -1;
 }
 ```
+
 ## 3. Multi_oom Test
 > Multi-oom Test는 이번 Pintos Project 2에서 가장 까다로웠던 Test였다. 이 Test의 목적은 Userprogram을 실행하고 마무리하면서 메모리 누수가 존재하는지에 대한 검사이다. Project 1과 다르게 이번 project에서는 동적 할당을 사용하기 시작했다. Argument pass에서 해당 size만큼 메모리를 할당하거나, file name을 넘기는 과정에서 원본에 영향을 미치지 않게 하기 위해 file name size만큼의 메모리르 할당받는 등의 경우가 발생했다. 운영체제의 주요한 역할 중 하나는 메모리 관리이다. 따라서, 본 과제를 진행하는 동안 run-time에서 할당한 메모리는 해제하여야 구현하는 목적에 부합할 것이다. malloc을 사용한 경우에는 free를 사용하고, palloc_get_page를 사용한 경우에는 palloc_free_page를 사용하여 메모리를 해제하였다. 그러나, 언급한 내용들은 코드 상으로 보이는 issue이고, 보이지 않는 issue는 처리가 안되어서 test를 통과하지 못하였다. 이 과정에서도 Project 1과 마찬가지로 Concurreny Issue는 정말 까다롭다고 생각이 들었다. Test output을 보면 child process에 관한 오류가 계속 발생하였다. 원인을 분석한 결과, Parent process에서 create를 호출하여 child process를 만들고 load하는 과정에서 Parent Process가 먼저 dying 처리 되어버린다면, 이 Parent process에서 child process로 접근이 가능했기 때문에 child process에 대해 처리를 못해준다. 이 경우를 고려하여 따로 처리를 해줄 필요가 있었다.  
+
 ```cpp
 tid_t
 process_execute (const char *file_name) 
@@ -803,13 +859,14 @@ process_execute (const char *file_name)
 }
 ```
 > process_execute에 마지막 부분에 위에서 언급한 case를 처리해주어 문제를 해결하였다. 결국, 위 상황에서 발생하는 case는 child process가 그대로 남아있는 경우이므로 child process에 대해 wait을 call하여 종료시키게 만들어 주었다.
+
 ## 4. Changed from Design Report
 > Argument passing에서 Design Report에서는 Argument pass method를 넣는 시점을 load의 setup_stack 직후였다. 실제 구현 중에는 start_process에서 load 직후로 바꾸었는데, 이유는 start_process에 있는 struct intr_frame if_의 member들을 이용하여 처리하는 것이 좀 더 가시적이고, load는 변경사항을 만들기가 조금 까다로웠는데, start_process는 그에 비해 자유로웠기 때문이다. load의 성공 여부로 argument를 passing하는 것이 좀더 가독성을 높여준다고 생각했다.
 
 ## 5. What We have Learned
 > 우리가 사용하는 개발 환경인 Linux shell에서 Program이 어떠한 방식으로 구동되는지 알게 되었다. 다른 OS 또한 같은 concept으로 이루어질 것이라고 생각하지만, Argument passing 때문에 Linux shell을 떠올리면서 구현을 한 것은 사실이다. Argument passing으로 메모리에 argument들이 적재되는 과정과 이를 활용하는 방법, system call이 발생하였을 때의 과정과 각 기능들을 알게 되었다. Memory management도 구현하면서 메모리 사용을 처음부터 잘 관리해야 문제가 발생하지 않는다고 느꼈다. 이를 처리하지 않으면 디버깅 또는 처리가 매우 까다롭기 때문에 느낀 것 같다. 더불어, 위 문제를 해결하면서 Concurrency 문제는 다시 한번 중요하며 어렵다고 생각이 들었다. 개발 및 프로그램의 설계할 때는 Concurreny에 대해 정확히 알고 있어야 유지 보수 및 구현이 용이할 것 같다.
 
-<br>
+</br>
 
 # **Result**
 서버에서 make check를 입력하여 나온 모든 test에 대한 결과값이다.
