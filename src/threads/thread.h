@@ -115,6 +115,8 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+
+    struct hash vm;     /* thread가 가진 virtual address space를 관리하는 hash table */
   };
 
 /* If false (default), use round-robin scheduler.

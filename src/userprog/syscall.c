@@ -174,13 +174,19 @@ tell (int fd)
 void
 close (int fd)
 {
-  // struct file *f;
-
-	// if((f = process_get_file(fd))) { /* file descriptor를 이용하여 파일 객체 검색 */
-	// 	file_close(f);      /* 해당하는 파일을 닫음 */
-	// 	thread_current()->fd_table[fd] = NULL; /* file descriptor 엔트리 초기화 */
-	// }
   process_close_file(fd);
+}
+
+mapid_t
+mmap (int fd, void *addr)
+{
+  
+}
+
+void
+munmap (mapid_t mapid)
+{
+  
 }
 
 static void
@@ -239,6 +245,14 @@ syscall_handler (struct intr_frame *f )
     case SYS_CLOSE:
       get_argument(f->esp + 4, &argv[0], 1);
 		  close(argv[0]);
+      break;
+    case SYS_MMAP:                   /* Map a file into memory. */
+      get_argument(f->esp + 4, &argv[0], 2);
+      f->eax = mmap(argv[0], (void*)argv[1]);
+      break;
+    case SYS_MUNMAP:                 /* Remove a memory mapping. */
+      get_argument(f->esp + 4, &argv[0], 1);
+      munmap(argv[0]);
       break;
     default :
       exit(-1);

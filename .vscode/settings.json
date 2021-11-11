@@ -1,7 +1,16 @@
 {
     "files.associations": {
         "istream": "c",
-        "ostream": "c"
+        "ostream": "c",
+        "vaddr.h": "c",
+        "file.h": "c",
+        "interrupt.h": "c",
+        "stdio.h": "c",
+        "process.h": "c",
+        "syscall-nr.h": "c",
+        "thread.h": "c",
+        "filesys.h": "c",
+        "syscall.h": "c"
     },
     "cmake.configureOnOpen": true
 }

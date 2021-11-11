@@ -219,6 +219,8 @@ process_exit (void)
   
   palloc_free_page(cur->fd_table); /* file descriptor 테이블 메모리 해제 */
 
+  vm_entry(&cur->vm);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -646,4 +648,23 @@ void process_close_file(int fd)
 		file_close(f);
 		thread_current()->fd_table[fd] = NULL;  /* file descriptor 테이블 해당 엔트리 초기화 */
 	}
+}
+
+bool handle_mm_fault(struct vm_entry *vme)
+{
+  bool success = false;
+  void *kaddr;
+  struct page *kpage;
+  switch(vme->type)                
+	{
+		case VM_BIN:
+      break;
+		case VM_FILE:
+      break;
+		case VM_ANON:
+      break;
+		default:
+      break;
+	}
+
 }
