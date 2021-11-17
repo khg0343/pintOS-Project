@@ -10,464 +10,214 @@
 
 # **Introduction**
 
-이번 프로젝트의 목표는 주어진 Pintos 코드를 수정하여 User program이 실행될 수 있도록 하는 것이다. User program 실행을 위해 아래의 사항들을 구현해야 한다.
+이번 프로젝트의 목표는 Virtual Memory를 구현하는 것이다. 아래 사항들을 구현함으로써 목표를 달성 할 수 있을 것이다.
 
-1. Argument passing
-2. Process terminate messages
-3. System call
-4. Denying writes to executables
+1. Frame Table
+2. Lazy Loading
+3. Supplemental Page Table
+4. Stack Growth
+5. File Memory Mapping
+6. Swap Table
+7. On Process Termination
 
 ------------------------------
 
 # **I. Anaylsis on Current Pintos system**
 
-본 Lab 2에서는 PintOS의 User Program에 대해 주어진 과제를 수행한다.
-주어진 과제를 수행하기 전 현재 pintOS에 구현되어 있는 system을 알아보자.
+현재 Pintos의 상황은 Project 2에서 보았듯이 load와 load_segment에서 program의 모든 부분을 Physical Memory에 적재한다. 이는 매우 비효율적으로 모든 부분의 데이터를 올리는 대신, Progress 중에 어떠한 데이터가 필요하다면 해당 데이터를 Physical Memory에 올리는 것이 효율적일 것이다. Project 1의 Alarm clock과 비슷한 맥락이다. 이 방법을 Lazy Loading이라 한다. 이를 구현하기 위해서는 Virtual Memory의 구현이 필요하다.
 
-## **Process Execution Procedure**
-먼저 PintOS의 Process Execution Procedure을 분석해보자.
-
-Project 1을 구현 할 때, Linux Shell에서 "pintos -q run alarm-single"과 같은 명령어로 프로그램을 실행시킨다. 이처럼 프로그램을 실행시키는데에는 직접적인 프로그램명도 있지만 부수적으로 붙는 옵션들이 존재한다. PintOS에서는 이러한 argument를 어떻게 다루고, process를 execution하게 되는지 그 과정을 알아보고자 한다.
-
-PintOS의 main program이 시작되는 init.c의 main함수이다.
-
+## **Current Pintos Problem & Overall Solution**
+각 Process는 위와 같은 Address Space를 가지는데, 내부에 Stack, BSS, Data, Code의 영역을 가진다.
+현재 Pintos의 Memory Layout은 아래와 같다.
+31                12 11     0
++------------------+--------+
+|  Page Number     | Offset |
++------------------+--------+
+위를 Virtual Address라 하는데, 현재 구현 되어있는 PTE(Page Table Entry)가 VA를 Physical Address로 변환하여 가리켜준다. PA의 형태는 아래와 같다.
+31                12 11     0
++------------------+--------+
+|  Frame Number    | Offset |
++------------------+--------+
+Current Pintos System은 process_exec() -> load()-> load_segment() -> setup_stack()을 거쳐 Physical Memory에 data를 적재하였다. load_segment()를 살펴보자.
 ```cpp
-/* threads/init.c */
-/* Pintos main program. */
-int
-main (void)
+static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
+              uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
-  char **argv;
+  ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
+  ASSERT (pg_ofs (upage) == 0);
+  ASSERT (ofs % PGSIZE == 0);
 
-  /* Clear BSS. */  
-  bss_init ();
+  file_seek (file, ofs);
+  while (read_bytes > 0 || zero_bytes > 0) 
+    {
+      /* Calculate how to fill this page.
+         We will read PAGE_READ_BYTES bytes from FILE
+         and zero the final PAGE_ZERO_BYTES bytes. */
+      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+      size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-  /* Break command line into arguments and parse options. */
-  argv = read_command_line ();
-  argv = parse_options (argv);
-  
-  ...
-  
-  /* Run actions specified on kernel command line. */
-  run_actions (argv);
+      /* Get a page of memory. */
+      uint8_t *kpage = palloc_get_page (PAL_USER);
+      if (kpage == NULL)
+        return false;
 
-  /* Finish up. */
-  shutdown ();
-  thread_exit ();
+      /* Load this page. */
+      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+        {
+          palloc_free_page (kpage);
+          return false; 
+        }
+      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+
+      /* Add the page to the process's address space. */
+      if (!install_page (upage, kpage, writable)) 
+        {
+          palloc_free_page (kpage);
+          return false; 
+        }
+
+      /* Advance. */
+      read_bytes -= page_read_bytes;
+      zero_bytes -= page_zero_bytes;
+      upage += PGSIZE;
+    }
+  return true;
 }
 ```
-
-> main에서 command line을 읽고 이를 argument와 option으로 나눈다. 이렇게 만들어진 argv에 대해 run_actions()이 호출된다.
-
-그렇다면 run_action()이 어떤 함수인지를 보자.
-
+위에서 볼 수 있듯이, Program 전체를 memory에 load하고 있다. 이를 해결하기 위해 Lazy loading을 구현 할 것이다. Lazy loading은 사용해야 할 부분만 load하고, 당장 사용하지 않는 부분은 일종의 표시만 해두는 것이다. Size가 작은 Program이라면 문제의 영향이 작을 수 있겠지만, Size가 큰 프로그램이라면 Lazy Loading을 통하여 모두 load하지 않고, 필요 시에 memory에 올리면 되므로 효율적이다.
+이를 구현하기 위해 우리는 Page의 개념을 적용하려 한다. 만약 100이란 size의 memory가 주어졌고, 날 것으로 활용한다면, 중간중간 빈 공간이 발생하고 이는 메모리의 낭비를 발생시킬 것이다. 이 메모리에 들어갈 수 있는 크기를 10으로 나누어 놓는다면 딱 맞는 size의 메모리에 넣거나 할 수 있는데 이 또한 효과적이지 못해 frame 10개를 만들고 각 프로세스가 가지는 메모리의 크기도 size 10의 page로 나누어 두어 효율성을 높일 수 있다. Lazy Loading에서 필요한 page만 메모리에 올리고 필요 할 때 마다 disk에서 page를 올리면 해결될 것이다. 결국, Project 3에서는 Memory Management를 구현 하는 것인데, 사용되고 있는 Virtual / Physical Memory 영역에 대해 추적을 한다는 것과 같은 말일 것이다.
+또한, Page Fault에 대해서 알아보자. 현재 Page Fault는 아래와 같다.
 ```cpp
-/* threads/init.c */
-/* Executes all of the actions specified in ARGV[] up to the null pointer sentinel. */
 static void
-run_actions (char **argv) 
+page_fault (struct intr_frame *f) 
 {
-  /* An action. */
-  struct action 
-    {
-      char *name;                       /* Action name. */
-      int argc;                         /* # of args, including action name. */
-      void (*function) (char **argv);   /* Function to execute action. */
-    };
+  bool not_present;  /* True: not-present page, false: writing r/o page. */
+  bool write;        /* True: access was write, false: access was read. */
+  bool user;         /* True: access by user, false: access by kernel. */
+  void *fault_addr;  /* Fault address. */
 
-  /* Table of supported actions. */
-  static const struct action actions[] = 
-    {
-      {"run", 2, run_task},
-#ifdef FILESYS
-      {"ls", 1, fsutil_ls},
-      {"cat", 2, fsutil_cat},
-      {"rm", 2, fsutil_rm},
-      {"extract", 1, fsutil_extract},
-      {"append", 2, fsutil_append},
-#endif
-      {NULL, 0, NULL},
-    };
-  ...
-  
-}
+  /* Obtain faulting address, the virtual address that was
+     accessed to cause the fault.  It may point to code or to
+     data.  It is not necessarily the address of the instruction
+     that caused the fault (that's f->eip).
+     See [IA32-v2a] "MOV--Move to/from Control Registers" and
+     [IA32-v3a] 5.15 "Interrupt 14--Page Fault Exception
+     (#PF)". */
+  asm ("movl %%cr2, %0" : "=r" (fault_addr));
 
-/* Runs the task specified in ARGV[1]. */
-static void
-run_task (char **argv)
-{
-  const char *task = argv[1];
+  /* Turn interrupts back on (they were only off so that we could
+     be assured of reading CR2 before it changed). */
+  intr_enable ();
+
+  /* Count page faults. */
+  page_fault_cnt++;
+
+  /* Determine cause. */
+  not_present = (f->error_code & PF_P) == 0;
+  write = (f->error_code & PF_W) != 0;
+  user = (f->error_code & PF_U) != 0;
   
-  printf ("Executing '%s':\n", task);
-#ifdef USERPROG
-  process_wait (process_execute (task));
-#else
-  run_test (task);
-#endif
-  printf ("Execution of '%s' complete.\n", task);
+  if (!user || is_kernel_vaddr(fault_addr) || not_present ) exit(-1);
+
+  /* To implement virtual memory, delete the rest of the function
+     body, and replace it with code that brings in the page to
+     which fault_addr refers. */
+  printf ("Page fault at %p: %s error %s page in %s context.\n",
+          fault_addr,
+          not_present ? "not present" : "rights violation",
+          write ? "writing" : "reading",
+          user ? "user" : "kernel");
+  kill (f);
 }
 ```
-
-> run_action()은 parameter로 넘겨받은 argument에 대해 action을 수행하는 함수이다. user program을 실행하게 되면, run 'user program'이 수행됨에 따라 argc는 2가 되는 것이고, 이에 따른 run_task가 호출된다. run_task에서는 run을 통해 task로 user program라는 인자가 넘어온 상태이고, 이 task에 대한 process_execute와 process_wait함수가 호출되는 형태이다.
-
-process_wait()과 process_execute()의 코드를 살펴보도록 하자.
-
-  ```cpp
-  /*userprog/process.c*/
-  int
-  process_wait (tid_t child_tid UNUSED) 
-  {
-    return -1;
-  }
-  ```
-
-  > process wait의 경우 child process가 종료될때까지 대기하도록 하는 함수이다. 하지만 현재 pintOS에는 이 부분이 구현이 되어있지 않고 -1만 return하게 구현된 상태이다.
-
-  ```cpp
-   /*userprog/process.c*/
-  tid_t process_execute (const char *file_name) 
-  {
-    char *fn_copy;
-    tid_t tid;
-
-    /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-    fn_copy = palloc_get_page (0);
-    if (fn_copy == NULL)
-      return TID_ERROR;
-    strlcpy (fn_copy, file_name, PGSIZE);
-
-    /* Create a new thread to execute FILE_NAME. */
-    tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-    if (tid == TID_ERROR)
-      palloc_free_page (fn_copy); 
-    return tid;
-}
-  ```
-
-> 위 method에서는 file_name을 전체를 넘기는 부분은 존재하지만, file_name을 token으로 자르는 부분은 존재하지 않는다. 이것을 통해 유추할 수 있듯이, 현재 pintOS에는 argument passing이 구현되어 있지 않다. 관련된 내용은 Argument Passing Implement부분에서 구체적으로 후술하겠다. 추가적으로, 이는 Process termination message를 구현할 때도 영향을 미치므로 전체적인 구현 순서를 고려할 필요가 있다.
->  
-> 다시한번 "pintos -q run alarm-single"을 예로 들면, [pintos, -q, run, alarm-single]과 같이 구분되어 pintos는 thread_create의 file_name에 넣어 넘겨주는 것이 합리적일 것이다. Argument들은 처리가 안되었는데, thread_create()의 4번째 인자를 보면 fn_copy이다. 이는 file_name, 즉 전체 명령어를 의미하고, start_process()의 인자가 될 것이므로 start_process에 넘어가는 file_name은 전체 명령어이다. 전체 명령어른 넘겼으므로 이후에 인자들을 처리 할 가능성이 생겼다.
-
-다음으로는 Process를 시작하는 함수인 start_process()를 보자.
-
-  ```cpp
-  static void start_process (void *file_name_)
-  {
-    char *file_name = file_name_;
-    ...
-    success = load (file_name, &if_.eip, &if_.esp);
-
-    /* If load failed, quit. */
-    palloc_free_page (file_name);
-    if (!success) 
-    thread_exit ();
-    ...
-  ```
-
-> 위 method를 보면 load에서도 전체 명령어를 넘긴다. 밑에 if(!success) 코드를 보았을 때, load가 넘겨주는 값이 0이면 thread_exit을 call하는 것과 주석을 보아 load에서 0이 아닌 값을 return하면 load가 성공, 즉 실행이 성공되었다는 것을 유추할 수 있다. 더불어, load에서 argument들을 처리할 것이라는 것을 예측할 수 있다.
-
-그렇다면 load() 함수를 자세히 분석해보자.
-
+Current Pintos는 모든 segment를 Physical Page에 할당하므로 page fault 시 process를 kill하여 강제 종료 시킨다. 이를 바람직하지 못하며 구현하고자 하는 방향으로 생각해보면, disk에 있는지 아니면 구현 할 다른 data structure에 사용되지 않았다고 표시를 남긴채 존재하는지를 검사하여, 이를 memory에 올려서 계속 progress를 이어나갈 수 있도록 해야한다.
+위 사항들을 구현하기 위해, 현재 page address가 어떠한 방식으로 mapping되는지 알아보자.
 ```cpp
-  /*userprog/process.c*/
-  /* Loads an ELF executable from FILE_NAME into the current thread.
-   Stores the executable's entry point into *EIP
-   and its initial stack pointer into *ESP.
-   Returns true if successful, false otherwise. */
-bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+static bool install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
-  struct Elf32_Ehdr ehdr;
-  struct file *file = NULL;
-  off_t file_ofs;
-  bool success = false;
-  int i;
 
-  /* Allocate and activate page directory. */
-  t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL) 
-    goto done;
-  process_activate ();
+  /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+```
+현재 pintos의 page table에 PA와 VA를 Mapping 시켜주는 함수이다. 위 함수에서 kpage가 PA를 가리키고, upage가 VA를 가리킨다. Writable은 true이면 쓰기 가능이고, false이면 읽기 전용인 page이다. 또한, pagedir이라는 것이 존재하는데, 이는 모든 VA Page에 대하여 entry를 사용한다면 접근이 비효율적이므로, 한 단계 상위 개념인 page directory를 사용하는 것이다. Project 1의 thread elem과 elem_list와 비슷한 맥락이라고 보여진다. Page directory는 Page table의 address를 가지고 있는 table이다. Page Table은 VA -> PA인 PA를 가지고 있는 Entry들의 모임이다. 또한, 현재 PA를 할당 및 해제하는 방법은 palloc_get_page(), palloc_free_page()를 이용한다. 
+```cpp
+void * palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
+{
+  struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
+  void *pages;
+  size_t page_idx;
 
-  /* Open executable file. */
-  file = filesys_open (file_name);
-  if (file == NULL) 
+  if (page_cnt == 0)
+    return NULL;
+
+  lock_acquire (&pool->lock);
+  page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
+  lock_release (&pool->lock);
+
+  if (page_idx != BITMAP_ERROR)
+    pages = pool->base + PGSIZE * page_idx;
+  else
+    pages = NULL;
+
+  if (pages != NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
-      goto done; 
+      if (flags & PAL_ZERO)
+        memset (pages, 0, PGSIZE * page_cnt);
+    }
+  else 
+    {
+      if (flags & PAL_ASSERT)
+        PANIC ("palloc_get: out of pages");
     }
 
-  /* Read and verify executable header. */
-  ...
-
-  /* Read program headers. */
-  ...
-
-  /* Set up stack. */
-  if (!setup_stack (esp))
-    goto done;
-
-  /* Start address. */
-  *eip = (void (*) (void)) ehdr.e_entry;
-
-  success = true;
-
- done:
-  /* We arrive here whether the load is successful or not. */
-  file_close (file);
-  return success;
+  return pages;
 }
-  }
-  ```
-
-> load를 보면 pagedir_create라는 함수를 통해 user process의 page table을 생성하고, filesys_open이라는 method를 통해 실행하고자 하는 프로그램의 이름으로 실행가능한 파일을 open한다. 그 다음에는 ELF header정보를 읽어오고, esp와 eip setting을 한다.
->  
-> process_activate()는 context switch가 일어남에 따라 현재 process의 page table을 activate하는 함수이다.
->  
-> setup_stack()는 stack을 setting 해주는 것인데, 설명을 보면 0~esp의 크기의 stack을 setting 해준다. esp는 현재 가리키고 있는 stack pointer이며 이는 setup_stack에서 PHYS_BASE인 default 값으로 설정된다. 이 stack에 argument들을 넣어서 esp를 이용하여 함수들이 필요한 인자를 사용하게 구현하면 될 것이다. pintOS 문서를 참고하면, 이 stack은 위에서 아래로 자라는 것을 알 수 있다. 따라서, arguments을 stack에 넣을 때 esp를 줄여가면서 넣으면 될 것이다. 넣는 순서, 사이즈 등은 아래 사진을 참고하여 같은 방향으로 구현하고자 한다.
-
-
-![figure_1](./img/Figure_1.PNG)
-
-- 코드 분석 결과 전체적인 User Program 실행 방법은 아래 그림과 같다. 구현이 필요한 일부 부분에 대한 구간도 표시를 해놓았다.
-![figure_2](./img/Figure_2.png)
-
-## **System Call Procedure**
-이번엔 PintOS의 System Call Procedure을 분석해보자.
-
-System Call은 User Program의 Kernel 영역 접근을 위해 호출되는 kernel이 제공하는 interface이며, 이는 System Call Handler를 통해 이루어진다. System Call이 호출되면 kernel mode로 변환되며 kernel이 대신 해당 작업을 수행하고, 이후 다시 user mode로 변환되어 작업을 이어나간다.
-
-먼저 이번 Project에서 다루어야할 System Call에는 어떤 종류가 있는지 System call number list를 통해 알아보자
-
-```cpp
-/* lib/syscall-nr.h */
-
-/* System call numbers. */
-enum 
-  {
-    /* Projects 2 and later. */
-    SYS_HALT,                   /* Halt the operating system. */
-    SYS_EXIT,                   /* Terminate this process. */
-    SYS_EXEC,                   /* Start another process. */
-    SYS_WAIT,                   /* Wait for a child process to die. */
-    SYS_CREATE,                 /* Create a file. */
-    SYS_REMOVE,                 /* Delete a file. */
-    SYS_OPEN,                   /* Open a file. */
-    SYS_FILESIZE,               /* Obtain a file's size. */
-    SYS_READ,                   /* Read from a file. */
-    SYS_WRITE,                  /* Write to a file. */
-    SYS_SEEK,                   /* Change position in a file. */
-    SYS_TELL,                   /* Report current position in a file. */
-    SYS_CLOSE,                  /* Close a file. */
-...
+/*palloc_get_page는 palloc_get_multiple을 호출하는 하나의 line으로 이루어져 있다.*/
 ```
-
-위의 13개의 System Call이 이번 Project2에서 다루어야하는 부분이며, 해당 기능들에 대한 함수는 아래의 user/syscall.c에 구현되어있다.
-
+palloc_get_page는 4KB의 Page를 할당하고, 이 page의 PA를 return 한다. Prototype에 flag를 받는데, PAL_USER, PAL_KERNEL, PAL_ZERO가 있다. 각각의 설명은 아래와 같다.
+> - PAL_USER : User Memory (0~PHYS_BASE(3GB))에 Page 할당.
+> - PAL_KERNEL : Kernel Memory (>PHYS_BASE)에 Page 할당.
+> - PAL_ZERO : Page를 0으로 initialization.
+Palloc_free_page()는 page의 PA를 Parameter로 사용하며, page를 재사용 할 수 있는 영역에 할당한다.
 ```cpp
-/* lib/user/syscall.h*/
-/* Projects 2 and later. */
-void halt (void) NO_RETURN;
-void exit (int status) NO_RETURN;
-pid_t exec (const char *file);
-int wait (pid_t);
-bool create (const char *file, unsigned initial_size);
-bool remove (const char *file);
-int open (const char *file);
-int filesize (int fd);
-int read (int fd, void *buffer, unsigned length);
-int write (int fd, const void *buffer, unsigned length);
-void seek (int fd, unsigned position);
-unsigned tell (int fd);
-void close (int fd);
-```
-
-그 예시로 exec를 이용하여 설명해보겠다.
-
-```cpp
-/* lib/user/syscall.c*/
-pid_t
-exec (const char *file)
+/* Frees the PAGE_CNT pages starting at PAGES. */
+void palloc_free_multiple (void *pages, size_t page_cnt) 
 {
-  return (pid_t) syscall1 (SYS_EXEC, file);
+  struct pool *pool;
+  size_t page_idx;
+
+  ASSERT (pg_ofs (pages) == 0);
+  if (pages == NULL || page_cnt == 0)
+    return;
+
+  if (page_from_pool (&kernel_pool, pages))
+    pool = &kernel_pool;
+  else if (page_from_pool (&user_pool, pages))
+    pool = &user_pool;
+  else
+    NOT_REACHED ();
+
+  page_idx = pg_no (pages) - pg_no (pool->base);
+
+#ifndef NDEBUG
+  memset (pages, 0xcc, PGSIZE * page_cnt);
+#endif
+
+  ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
+  bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
 }
+/*palloc_free_page는 palloc_free_multiple을 호출하는 하나의 line으로 이루어져 있다.*/
 ```
+현재 Pintos의 stack 크기는 4KB로 고정되어 있다. 이 영역의 크기를 벗어나면 현재는 Segmentation fault를 발생 시킨다. 이 Stack의 크기가 일정 조건을 충족한다면 확장하는 방향으로 구현하고자 한다.
+> -> Stack의 size를 초과하는 address의 접근이 발생하였을 때
+> - Valid stack access or Segmentation Fault 판별 기준 생성
+> Valid stack access -> Stack size expansion (Limit max = 8MB)
 
-> syscall의 함수는 매우 간단하게 구현되어있으며, 후술할 syscall macro에 system call number와 parameter인 file을 argument로 넘겨주는 것이 전부이다.
-
-위에서 사용된 syscall1은 아래와 같은 형태로 정의되어있다.
-
-```cpp
-/**/
-/* Invokes syscall NUMBER, passing argument ARG0, and returns the
-   return value as an `int'. */
-#define syscall1(NUMBER, ARG0)                                           \
-        ({                                                               \
-          int retval;                                                    \
-          asm volatile                                                   \
-            ("pushl %[arg0]; pushl %[number]; int $0x30; addl $8, %%esp" \
-               : "=a" (retval)                                           \
-               : [number] "i" (NUMBER),                                  \
-                 [arg0] "g" (ARG0)                                       \
-               : "memory");                                              \
-          retval;                                                        \
-        })
-```
-
-> 이때 Number는 위에서 언급한 System call number를 의미하며, Arg0는 exec 함수의 parameter가 한 개이기 때문에 이를 담기 위한 값이다. system call number를 invoke하고, arg들은 user stack에 push한다. 여기서 $0x30은 kernel공간의 interrupt vector table에서 system call handler의 주소를 의미한다.
->  
-> syscall1은 arg가 1개인 경우에 대한 정의이며, arg개수에 따라 syscall0-3으로 나누어 사용하면 된다.
-
-현재 pintOS의 system call handler인 syscall_handler()는 아래의 코드를 보다시피 아무것도 구현되어있지 않다. 이번 Project에서 user program이 요하는 기능을 user stack의 정보를 통해 수행할 수 있도록 해당 함수에 기능을 구현하여야 한다.
-
-```cpp
-/*userprog/syscall.c*/
-static void
-syscall_handler (struct intr_frame *f UNUSED) 
-{
-  printf ("system call!\n");
-  thread_exit ();
-}
-```
-
-## **File System**
-마지막으로 PintOS의 File System을 분석해보자.
-
-먼저 PintOS의 file system에서 사용되는 struct를 보도록하자.
-아래는 PintOS의 file의 구조체이다.
-
-```cpp
-/* filesys/file.c */
-/* An open file. */
-struct file 
-{
-  struct inode *inode;        /* File's inode. */
-  off_t pos;                  /* Current position. */
-  bool deny_write;            /* Has file_deny_write() been called? */
-};
-```
-
-> inode : file system에서 file의 정보를 저장한다. </br>
-> pos : file을 read 또는 write하는 cursor의 현재 postion을 의미한다. </br>
-> deny_write : file의 write가능 여부를 표시하는 boolean 변수이다.
-
-</br>
-
-inode는 아래와 같은 정보를 저장하고 있는 구조체이다.
-
-```cpp
-/* filesys/inode.c */
-/* In-memory inode. */
-struct inode 
-{
-  struct list_elem elem;              /* Element in inode list. */
-  block_sector_t sector;              /* Sector number of disk location. */
-  int open_cnt;                       /* Number of openers. */
-  bool removed;                       /* True if deleted, false otherwise. */
-  int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-  struct inode_disk data;             /* Inode content. */
-};
-```
-
-inode의 data를 정의하는 data type인 inode_disk라는 구조체이다.
-
-```cpp
-/* filesys/inode.c */
-/* On-disk inode. Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk
-{
-  block_sector_t start;               /* First data sector. */
-  off_t length;                       /* File size in bytes. */
-  unsigned magic;                     /* Magic number. */
-  uint32_t unused[125];               /* Not used. */
-};
-```
-
-> inode의 data는 inode_disk 구조체의 형태로 저장되어있으며, inode_disk는 저장한 data의 start부분의 sector의 index와, 그 file의 크기인 length를 저장하여 inode에 저장된 data를 정의하고 있다.
-
-</br>
-
-다음은 filesys에 포함된 다양한 함수를 보도록 하자.
-
-```cpp
-/* Creates a file named NAME with the given INITIAL_SIZE.
-   Returns true if successful, false otherwise.
-   Fails if a file named NAME already exists,
-   or if internal memory allocation fails. */
-bool
-filesys_create (const char *name, off_t initial_size) 
-{
-  block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
-  bool success = (dir != NULL
-                  && free_map_allocate (1, &inode_sector)
-                  && inode_create (inode_sector, initial_size)
-                  && dir_add (dir, name, inode_sector));
-  if (!success && inode_sector != 0) 
-    free_map_release (inode_sector, 1);
-  dir_close (dir);
-
-  return success;
-}
-```
-
-> filesys_create는 파일 이름이 name이고 크기가 initial_size인 file을 만드는 함수이다. </br>
-> 간단히 내부를 보면 inode_sector를 선언하고 해당 sector에 대해 free_map_allocate함수를 이용하여 할당한다. 이후 inode_create함수를 이용하여 initial_size로 inode의 data length를 initialize하고 file system device의 sector에 새 inode를 쓴다. 이렇게 만들어진 inode에 대해 해당 sector가 파일명이 name인 file을 dir에 추가하는 과정을 통해 file이 create됨을 알 수 있다.
-
-```cpp
-/* Opens the file with the given NAME.
-   Returns the new file if successful or a null pointer
-   otherwise.
-   Fails if no file named NAME exists,
-   or if an internal memory allocation fails. */
-struct file *
-filesys_open (const char *name)
-{
-  struct dir *dir = dir_open_root ();
-  struct inode *inode = NULL;
-
-  if (dir != NULL)
-    dir_lookup (dir, name, &inode);
-  dir_close (dir);
-
-  return file_open (inode);
-}
-```
-
-> filesys_open는 파일 이름이 name인 file을 여는 함수이다. </br>
-> dir_lookup을 통해 파일명이 name인 inode를 찾고, 해당 inode를 file_open하는 구조로 이루어져있다.
-
-```cpp
-/* Deletes the file named NAME.
-   Returns true if successful, false on failure.
-   Fails if no file named NAME exists,
-   or if an internal memory allocation fails. */
-bool
-filesys_remove (const char *name) 
-{
-  struct dir *dir = dir_open_root ();
-  bool success = dir != NULL && dir_remove (dir, name);
-  dir_close (dir); 
-
-  return success;
-}
-```
-
-> filesys_remove는 파일 이름이 name인 file을 삭제하는 함수이다. </br>
-> dir_remove을 통해 파일명이 name인 inode를 찾아 삭제하는 구조로 이루어져있다.
-
-User Program이 File System로부터 load되거나, System Call이 실행됨에 따라 file system에 대한 code가 필요하다. 하지만, 이번 과제의 초점은 file system을 구현하는 것이 아니기 때문에 이미 구현되어있는 pintOS의 file system의 구조를 파악하고 적절히 사용할 수 있도록 하여야 한다. pintOS 문서에 따르면 filesys에 해당하는 코드는 수정하지 않는 것을 권장하고 있으므로, 구현에 있어 주의하도록 한다.
-
-그렇다면 각 thread가 이러한 file들에 어떻게 접근하고 사용하는 것은 어떻게 이루어질까?
-이때 File Descriptor라는 개념이 사용된다. File Descriptor(fd)란 thread가 file을 다룰 때 사용하는 것으로, thread가 특정 file에 접근할 때 사용하는 추상적인 값이다. fd는 일반적으로 0이 아닌 정수값을 가지며 int형으로 선언된다.
-thread가 어떤 file을 open하면 kernel은 사용하지 않는 가장 작은 fd값을 할당한다. 이때, fd 0, 1은 각각 stdin, stdout에 기본적으로 indexing되어있으므로 2부터 할당할 수 있다.
-그 다음 thread가 open된 파일에 System Call로 접근하게 되면, fd값을 통해 file을 지칭할 수 있다.
-각각의 thread에는 file descriptor table이 존재하며 각 fd에 대한 file table로의 pointer를 저장하고 있다. 이 pointer를 이용하여 file에 접근할 수 있게 되는 것이다.
-
-현재 PintOS의 코드에는 이러한 부분이 구현되어있지 않다. 이번 Project에서 thread의 file 접근에 대한 기능을 수행할 수 있도록 fd에 대한 부분을 구현하여야 한다.
-
+이제 아래 영역에서는 각 요소의 구현 방법을 나타낼 것이다.
 </br>
 
 # **II. Process Termination Messages**
