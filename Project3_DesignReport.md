@@ -26,7 +26,7 @@
 
 현재 Pintos의 상황은 Project 2에서 보았듯이 load와 load_segment에서 program의 모든 부분을 Physical Memory에 적재한다. 이는 매우 비효율적으로 모든 부분의 데이터를 올리는 대신, Progress 중에 어떠한 데이터가 필요하다면 해당 데이터를 Physical Memory에 올리는 것이 효율적일 것이다. Project 1의 Alarm clock과 비슷한 맥락이다. 이 방법을 Lazy Loading이라 한다. 이를 구현하기 위해서는 Virtual Memory의 구현이 필요하다.
 
-## **Current Pintos Problem & Overall Solution**
+## **Analysis**
 각 Process는 위와 같은 Address Space를 가지는데, 내부에 Stack, BSS, Data, Code의 영역을 가진다.
 현재 Pintos의 Memory Layout은 아래와 같다.
 > - 31                12 11     0
