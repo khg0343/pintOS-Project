@@ -29,15 +29,15 @@
 ## **Current Pintos Problem & Overall Solution**
 각 Process는 위와 같은 Address Space를 가지는데, 내부에 Stack, BSS, Data, Code의 영역을 가진다.
 현재 Pintos의 Memory Layout은 아래와 같다.
->31                12 11     0
->+------------------+--------+
->|  Page Number     | Offset |
->+------------------+--------+
+> 31                12 11     0
+> +------------------+--------+
+> |  Page Number     | Offset |
+> +------------------+--------+
 위를 Virtual Address라 하는데, 현재 구현 되어있는 PTE(Page Table Entry)가 VA를 Physical Address로 변환하여 가리켜준다. PA의 형태는 아래와 같다.
->31                12 11     0
->+------------------+--------+
->|  Frame Number    | Offset |
->+------------------+--------+
+> 31                12 11     0
+> +------------------+--------+
+> |  Frame Number    | Offset |
+> +------------------+--------+
 Current Pintos System은 process_exec() -> load()-> load_segment() -> setup_stack()을 거쳐 Physical Memory에 data를 적재하였다. load_segment()를 살펴보자.
 ```cpp
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
