@@ -38,7 +38,7 @@ void check_valid_buffer(void *buffer, unsigned size, void *esp, bool to_write)
   /* 위 내용을 buffer 부터 buffer + size까지의 주소에 포함되는 vm_entry들에 대해 적용 */
 }
 
-void check_valid_string (const void* str, void* esp)
+void check_valid_string (const void* str)
 {
   /* str에 대한 vm_entry의 존재 여부를 확인*/
   if(check_address(str) == NULL) exit(-1);

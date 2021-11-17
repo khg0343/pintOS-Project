@@ -1,5 +1,6 @@
 #include <hash.h>
 #include "vm/page.h"
+#include "threads/vaddr.h"
 #include "threads/thread.h"
 
 static unsigned vm_hash_func(const struct hash_elem *, void * UNUSED);
@@ -39,8 +40,8 @@ bool delete_vme(struct hash *vm, struct vm_entry *vme) /* 해시 테이블에서
 {
     if(!hash_delete(vm, &vme->elem)) return false;
     else {
-        free_page_vaddr(vme->vaddr);
-        swap_clear(vme->swap_slot);
+        // free_page_vaddr(vme->vaddr);
+        // swap_clear(vme->swap_slot);
         free(vme);
         return true;
     }
@@ -65,8 +66,8 @@ static void
 vm_destroy_func(struct hash_elem *e, void *aux UNUSED)
 {
     struct vm_entry *vme = hash_entry(e, struct vm_entry, elem);
-    free_page_vaddr(vme->vaddr);
-    swap_clear(vme->swap_slot);
+    // free_page_vaddr(vme->vaddr);
+    // swap_clear(vme->swap_slot);
     free(vme);
 }
 
