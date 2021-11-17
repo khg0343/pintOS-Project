@@ -7,15 +7,50 @@
 #include "threads/vaddr.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/page.h"
 
 static void syscall_handler (struct intr_frame *);
 struct lock lock_file;
 
-bool check_address(void *addr)
+struct vm_entry *check_address(void* addr)
 {
-  if(is_user_vaddr(addr)) return true;
-  else return false;
+  if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
+  // if(!is_user_vaddr(addr)) exit(-1);
+  
+  return find_vme(addr);
+  
+  /*addr이 vm_entry에 존재하면 vm_entry를 반환하도록 코드 작성 */
+  /*find_vme() 사용*/
+} 
+
+void check_valid_buffer(void *buffer, unsigned size, void *esp, bool to_write)
+{
+  int i;
+  for (i = 0; i < size; i++)
+    {
+        struct vm_entry *vme = check_address(buffer + i);
+        if (vme == NULL) exit(-1);
+        if (to_write == true && vme->writable == false) exit(-1);
+    }
+  /* 인자로 받은 buffer부터 buffer + size까지의 크기가 한 페이지의 크기를 넘을 수도 있음 */
+  /* check_address를 이용해서 주소의 유저영역 여부를 검사함과 동시에 vm_entry 구조체를 얻음 */
+  /* 해당 주소에 대한 vm_entry 존재여부와 vm_entry의 writable 멤버가 true인지 검사 */
+  /* 위 내용을 buffer 부터 buffer + size까지의 주소에 포함되는 vm_entry들에 대해 적용 */
 }
+
+void check_valid_string (const void* str, void* esp)
+{
+  /* str에 대한 vm_entry의 존재 여부를 확인*/
+  if(check_address(str) == NULL) exit(-1);
+
+  /* check_address()사용*/
+}
+
+// bool check_address(void *addr)
+// {
+//   if(is_user_vaddr(addr)) return true;
+//   else return false;
+// }
 
 void get_argument(void *esp, int *arg, int count){
   int i;
@@ -125,7 +160,7 @@ read (int fd, void *buffer, unsigned size)
     read_size = i;
 	} else {
 		if((f = process_get_file(fd))) 
-      read_size = file_read(f,buffer,size);  /* file descriptor가 0이 아닐 경우 파일의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
+      read_size = file_read(f, buffer, size);  /* file descriptor가 0이 아닐 경우 파일의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
 	}
 
 	lock_release(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
@@ -180,13 +215,14 @@ close (int fd)
 mapid_t
 mmap (int fd, void *addr)
 {
-  
+
 }
 
 void
 munmap (mapid_t mapid)
 {
-  
+  // struct mmap_file *f = find_mmap_file(mapid);
+  // if (f != NULL) do_mummap (f);
 }
 
 static void
@@ -204,6 +240,7 @@ syscall_handler (struct intr_frame *f )
       break;
     case SYS_EXEC:
       get_argument(f->esp + 4, &argv[0], 1);
+      check_valid_string ((void *) argv[0]);
       f->eax = exec((const char*)argv[0]);
       break;
     case SYS_WAIT:
@@ -220,6 +257,7 @@ syscall_handler (struct intr_frame *f )
       break;
     case SYS_OPEN:
       get_argument(f->esp + 4, &argv[0], 1);
+      check_valid_string ((void *) argv[0]);
       f->eax = open((const char *)argv[0]);
       break;
     case SYS_FILESIZE:
@@ -228,10 +266,12 @@ syscall_handler (struct intr_frame *f )
       break;
     case SYS_READ:
       get_argument(f->esp + 4, &argv[0], 3);
+      check_valid_buffer ((void *)argv[1], (unsigned)argv[2], f->esp, true);  //Changed
       f->eax = read((int)argv[0], (void*)argv[1], (unsigned)argv[2]);
       break;
     case SYS_WRITE:
       get_argument(f->esp + 4, &argv[0], 3);
+      check_valid_buffer ((void *)argv[1], (unsigned)argv[2], f->esp, false);  //Changed
       f->eax = write((int)argv[0], (const void*)argv[1], (unsigned)argv[2]);
       break;
     case SYS_SEEK:

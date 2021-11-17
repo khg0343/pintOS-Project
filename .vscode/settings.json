@@ -10,7 +10,8 @@
         "syscall-nr.h": "c",
         "thread.h": "c",
         "filesys.h": "c",
-        "syscall.h": "c"
+        "syscall.h": "c",
+        "hash.h": "c"
     },
     "cmake.configureOnOpen": true
 }
