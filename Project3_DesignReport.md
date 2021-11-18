@@ -408,6 +408,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t
 > load_segment는 segment를 process의 virtual address space에 load하는 함수이다. </br>
 > 현재는 load_segment가 실행되면 page를 할당하고, file을 page에 load하고 process's address space에 page를 저장하도록 구현되어있다. </br>
 > 이를 vm_entry를 할당하고 초기화 하며, vm (hash table)에 insert하도록 수정한다.
+------------------------------
 
 ```cpp
 /* userprog/process.c */
@@ -417,18 +418,6 @@ static bool setup_stack (void **esp)
 > stack을 초기화하는 함수이다. </br>
 > 현재는 page를 할당하고, install page함수를 통해 user virtual address UPAGE에서 kernel virtual address KPAGE로의 mapping을 page table에 추가한 후, esp를 설정하는 것까지 구현되어있다. </br>
 > 이후에 vm_entry를 생성 및 초기화하고, vm (hash table)에 insert하는 부분을 추가한다.
-
-</br>
-
-# **V. Stack Growth**
-
-## **Analysis**
-
-## **Solution**
-
-## **To be Added & Modified**
-
-
 
 </br>
 
@@ -442,10 +431,48 @@ static bool setup_stack (void **esp)
 
 </br>
 
+# **V. Stack Growth**
+
+## **Analysis**
+Current Pintos System에는 1 page(4KB)로 fixed되어, Stack 확장이 불가능하게 구현되어있다.
+따라서, Stack 확장이 가능하도록 구현하여야한다.
+
+## **Solution**
+stack pointer esp가 유효한 stack의 영역을 벗어나면 segmentation fault가 발생한다.
+먼저, 현재 stack size를 초과하는 주소에 접근이 발생했을 때, page fault handler에서 stack확장이 필요한지 판별하게 한다. 필요한 경우로 최대 limit이내의 접근일 경우 valid한 stack 접근으로 간주하며, interupt frame에서 esp를 가져온다. 이때 필요한 page 수를 계산하는 과정이 필요하다. 또한 pintos document에 명시된대로, 최대 8MB까지 stack을 확장할 수 있도록 수정한다.
+
+## **To be Added & Modified**
+```cpp
+/* userprog/process.c */
+bool expand_stack(void *addr)
+```
+
+> addr을 포함하도록 stack을 확장시키는 함수를 추가한다.
+------------------------------
+
+```cpp
+/* userprog/process.c */
+bool verify_stack(void *sp)
+```
+
+> sp(address)가 포함되어 있는지 확인하는 함수를 추가한다.
+------------------------------
+
+```cpp
+/* userprog/exception.c */
+static void page_fault (struct intr_frame *f) 
+```
+
+> verify stack()을 이용하여 address가 stack 영역에 포함되어 있는지 확인한 후,
+> expand_stack()을 이용하여 stack을 확장시킨다.
+
+</br>
+
 # **VI. File Memory Mapping**
 
 ## **Analysis**
 Current Pintos System에는 System Call : mmap(), mummap()이 없다. 따라서, file memory mapping이 불가능하다. 또한, Pintos document에 의거하여 read & write system call을 사용하지 말고, mmap을 이용하여 vm과 mapping한다고 한다. 이를 통해, 동일한 파일을 여러 process들의 vm에 mapping하여 접근 가능한 것이다.  이를 이루기 위해 위의 system call을 구현한다. mmap()과 mummap()의 역할은 아래와 같다.
+
 - mmap() : Lazy Loading에 의한 File Data를 memory에 load.
 - munmap() : mmap으로 형성 된 file mapping을 delete.
 이를 위해서는 mapping된 file들의 정보를 담을 수 있는 structure가 필요하다. 이 structure가 담아야 할 data는 아래와 같다.
@@ -456,10 +483,13 @@ Current Pintos System에는 System Call : mmap(), mummap()이 없다. 따라서,
 추가로, file memory mapping을 완전히 구현하기 위해서 file을 VA로 관리한다. VA를 관리 하기 위해 Virtual Address entry를 이용하여 hash_table로 관리한다.
 
 ## **To be Added & Modified**
-```cpp 
+
+```cpp
 int mmap(int fd, void *addr)
 ```
+
 > Lazy loading에 의해 file data를 memory에 load한다. fd는 process의 VA Space에 mapping할 file descriptor이고, addr은 mapping을 시작 할 주소이다. 이는 성공 시 mapping id를 return 하고, 실패 시 error -1을 return한다. 또한, mmap으로 mapping이 된 file은 mummap, process의 terminate 이전에는 접근이 가능해야 한다. 예로, munmap() 이전에 close() system call이 호출 되더라도 file mapping은 유효하여야 한다는 것이다. 이를 위해, filsys/file.c에 있는 method를 사용한다.
+------------------------------
 
 ```cpp
 struct file *file_reopen (struct file *file)  {
@@ -469,12 +499,14 @@ struct file *file_reopen (struct file *file)  {
 
 > File object를 copy하여 copy된 object의 주소를 return한다.
 끝으로, process의 file descriptor를 탐색하기 위해 project 2에서 구현한 method를 사용하고자 한다.
+------------------------------
 
 ```cpp
 int munmap(mapid_t mapid)
 ```
 
 >위에서 언급한 structure 내에서 mapid에 해당 되는 vm_entry를 해제하는 system call이다. 이때, 모든 mapid value가 close_all인 경우 모든 file mapping을 제거한다.
+------------------------------
 
 ```cpp
 bool handle_mm_fault(struct vm_entry *vmentry)
@@ -508,30 +540,36 @@ Frame을 새로 allocation 할 때 메모리가 부족하여 할당이 실패하
 ```
 
 > Swapping을 다룰 영역을 initialization한다.
+------------------------------
 
 ```cpp
 - void swap_in(size_t used_index, void *kaddr)
 ```
 
 > used_index의 swap table 공간에 있는 data를 kaddr로 넣어준다. 이는 frame을 다시 메모리에 적재하는 역할을 할 것이다.
+------------------------------
 
 ```cpp
 - size_t swap_out(void *kaddr)
 ```
 
 > 사용 가능한 memory가 존재하지 않을 때, Clock algorithm에 의해 선정된 victim frame을 swap partition으로 넣어준다. Dirty bit를 확인하여 true라면 write back을 하여 disk에 기록한다.
+------------------------------
 
 ```cpp
 - static struct list_elem* next_victim_frame()
 ```
 
 > 다음 Swapping 시 행해질 victim frame을 탐색 및 선정하는 method이다.
+------------------------------
 
 ```cpp
 - bool handle_mm_fault(struct vm_entry *vmentry)
 ```
 
 > vm을 다룰 때 3가지 type이 존재하는데, VM_ANON Type을 다룰 때 쓰인다. 이 type은 swap partition으로 부터 data를 load하기 때문에 이 handler에서 swapping in을 해주어야 한다.
+
+</br>
 
 # **VIII. On Process Termination**
 
@@ -545,6 +583,7 @@ void process_exit (void)
 ```
 
 > process가 종료되는 시점에서 해당 thread의 자원을 모두 해제해야 한다. 따라서, process_exit을 수정하여 구현하고자 하고, munmap을 사용하여 current thread의 resource들을 반복문을 통해 순회하며 해제한다.
+------------------------------
 
 ```cpp
 void munmap (mapid_t);
