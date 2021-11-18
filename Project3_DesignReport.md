@@ -407,10 +407,37 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
 
   > esp 주소가 valid한지 확인하고, 유효하다면 system call number에 따라 switch문으로 나누어 syscall 함수를 실행한다.
 # **VII. Swap Table**
-
+Frame을 새로 allocation 할 때 메모리가 부족하여 할당이 실패하는 경우가 존재한다. 이 경우에 Swapping이 필요한데, Swapping을 하기 위해 Swap disk와 Swap table이 필요하다. 원리는 간단하다. 메모리에 공간이 부족하다면 Swap table에 frame을 넣고 그 공간을 사용하는 것이다. 그렇다면 어떤 frame을 swap table에 넣어야 하는지는 Policy가 필요하다. Policy는 LRU Algorithm, Clock Algorithm 등이 있는데, LRU Algorithm은 Less Recent Used의 약자로 말 그대로이고, Clock Algorithm은 frame을 순회하면서 어떠한 bit가 1이면 해당 frame을 swapping하는 것이다. 본 과제에서는 Clock Algorithm이 bit를 사용하여 구현하기 전에는 좀 더 구현이 용이할 것으로 보이기도 하고, 가시적이어서 해당 algorithm을 사용하려고 한다.
+현재 Pintos의 swap partition은 4MB이며, 4KB로 나누어 관리를 한다. 이 Partition의 frame들을 연결해 줄 필요가 있기 때문에, Swap table은 list type으로 구현한다. 
 ## **Solution**
-
+크게 3가지의 method가 필요할 것으로 생각한다.
+1. swap_init()
+- Swapping을 다룰 부분을 initialization 하는 method이다.
+2. swap_in()
+- 메모리가 부족하여 swap table로 빼두었던 frame을 다시 메모리에 올리는 method이다.
+3. swap_out()
+- 메모리가 부족하여 swap table로 frame을 빼는 method이다.
 ## **To be Added & Modified**
+```cpp
+- void swap_init()
+```
+> Swapping을 다룰 영역을 initialization한다.
+```cpp
+- void swap_in(size_t used_index, void *kaddr)
+```
+> used_index의 swap table 공간에 있는 data를 kaddr로 넣어준다. 이는 frame을 다시 메모리에 적재하는 역할을 할 것이다.
+```cpp
+- size_t swap_out(void *kaddr)
+```
+> 사용 가능한 memory가 존재하지 않을 때, Clock algorithm에 의해 선정된 victim frame을 swap partition으로 넣어준다. Dirty bit를 확인하여 true라면 write back을 하여 disk에 기록한다.
+```cpp
+- static struct list_elem* next_victim_frame()
+```
+> 다음 Swapping 시 행해질 victim frame을 탐색 및 선정하는 method이다.
+```cpp
+- bool handle_mm_fault(struct vm_entry *vmentry)
+```
+> vm을 다룰 때 3가지 type이 존재하는데, VM_ANON Type을 다룰 때 쓰인다. 이 type은 swap partition으로 부터 data를 load하기 때문에 이 handler에서 swapping in을 해주어야 한다.
 # **VIII. On Process Termination**
 ## **Solution**
 On process termination에서 요구하는 것은 Process가 종료될 때 할당한 모든 resourece들, 예로 frame table과 같은 것들을 delete 해주라는 것이다. 단, Copy on Write가 필요한 page는 dirty bit를 판단 기준으로 삼아 disk에 써준다. 이를 위해서 System call : munmap을 구현하여 사용하고자 한다.
