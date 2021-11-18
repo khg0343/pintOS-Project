@@ -406,59 +406,21 @@ system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argume
   ```
 
   > esp 주소가 valid한지 확인하고, 유효하다면 system call number에 따라 switch문으로 나누어 syscall 함수를 실행한다.
-
-
-# **V. Denying Writes to Executables**
-
-## **Analysis**
-해당 문제는 수업시간에 진행한 Reader-Writer Problem(CSED312 Lecture Note 4: Synchronization 2; p.33~34)과 같은 맥락이다. 실행중인 파일에서 Writer가 파일을 변경한다면 예상치 못한 결과를 얻을 수 있다. Mutex를 직접 구현하여 과제를 수행하려 했으나 pintOS에 내제되어 있는 유용한 method가 있어 이를 이용하여 구현하고자 한다.
-
-  ```cpp
-  /* Prevents write operations on FILE's underlying inode
-   until file_allow_write() is called or FILE is closed. */
-  void file_deny_write (struct file *file) 
-  {
-    ASSERT (file != NULL);
-    if (!file->deny_write) 
-    {
-      file->deny_write = true;
-      inode_deny_write (file->inode);
-    }
-  }
-
-  /* Re-enables write operations on FILE's underlying inode.
-   (Writes might still be denied by some other file that has the
-   same inode open.) */
-  void file_allow_write (struct file *file) 
-  {
-    ASSERT (file != NULL);
-    if (file->deny_write) 
-    {
-      file->deny_write = false;
-      inode_allow_write (file->inode);
-    }
-  }
-  ```
-
-> 위 method의 주석을 보면, file_deny_write는 말 그대로 write를 거부하는 method이다. File struct에 deny_write라는 boolean value가 있는데, file_deny_write가 call 되었다면 해당 값을 true로 assign하고, file_allow_write를 call하면 해당 값이 false로 assign된다. 즉, 이를 이용하여 일종의 Mutex를 실현하고 잇는 것이다. 그렇다면 이 method를 call해야 할 때는 언제인지 알아보자. File write를 막아야 할 때는 이미 load를 하였을 때이다. 따라서 load에서 file을 open하고 나서 file_deny_write()를 호출한다. 이후, file이 close 될 때 이를 풀어주기 위해 file_allow_write를 호출해준다.
+# **VII. Swap Table**
 
 ## **Solution**
-File이 open되는 지점인 load 함수에서 file_deny_write()를 호출하고, file이 close 될 때 file_allow_write를 호출해 다시 권한을 넘긴다.
 
 ## **To be Added & Modified**
+# **VIII. On Process Termination**
+## **Solution**
+On process termination에서 요구하는 것은 Process가 종료될 때 할당한 모든 resourece들, 예로 frame table과 같은 것들을 delete 해주라는 것이다. 단, Copy on Write가 필요한 page는 dirty bit를 판단 기준으로 삼아 disk에 써준다. 이를 위해서 System call : munmap을 구현하여 사용하고자 한다.
 
-- bool load (const char *file_name, void (**eip) (void), void **esp)
-  > file이 open 후 시점에 file_deny_write를 호출한다.
-- file_allow_write는 이미 file_close안에 구현되어 있다.
-
-  ```cpp
-  void file_close (struct file *file) 
-  {
-    if (file != NULL)
-      {
-        file_allow_write (file);
-        inode_close (file->inode);
-        free (file); 
-      }
-  }
-  ```
+## **To be Added & Modified**
+```cpp
+void process_exit (void)
+```
+> process가 종료되는 시점에서 해당 thread의 자원을 모두 해제해야 한다. 따라서, process_exit을 수정하여 구현하고자 하고, munmap을 사용하여 current thread의 resource들을 반복문을 통해 순회하며 해제한다.
+```cpp
+void munmap (mapid_t);
+```
+> munmap에 Copy on write를 추가한다. pagedir.c에 있는 pagedir_is_dirty()를 사용하여 dirty bit를 판단하고, dirty == true라면 disk에 write back, false라면 바로 해제할 수 있도록 구현한다.
