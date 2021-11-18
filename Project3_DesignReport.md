@@ -84,9 +84,11 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 ```
+
 위에서 볼 수 있듯이, Program 전체를 memory에 load하고 있다. 이를 해결하기 위해 Lazy loading을 구현 할 것이다. Lazy loading은 사용해야 할 부분만 load하고, 당장 사용하지 않는 부분은 일종의 표시만 해두는 것이다. Size가 작은 Program이라면 문제의 영향이 작을 수 있겠지만, Size가 큰 프로그램이라면 Lazy Loading을 통하여 모두 load하지 않고, 필요 시에 memory에 올리면 되므로 효율적이다.
 이를 구현하기 위해 우리는 Page의 개념을 적용하려 한다. 만약 100이란 size의 memory가 주어졌고, 날 것으로 활용한다면, 중간중간 빈 공간이 발생하고 이는 메모리의 낭비를 발생시킬 것이다. 이 메모리에 들어갈 수 있는 크기를 10으로 나누어 놓는다면 딱 맞는 size의 메모리에 넣거나 할 수 있는데 이 또한 효과적이지 못해 frame 10개를 만들고 각 프로세스가 가지는 메모리의 크기도 size 10의 page로 나누어 두어 효율성을 높일 수 있다. Lazy Loading에서 필요한 page만 메모리에 올리고 필요 할 때 마다 disk에서 page를 올리면 해결될 것이다. 결국, Project 3에서는 Memory Management를 구현 하는 것인데, 사용되고 있는 Virtual / Physical Memory 영역에 대해 추적을 한다는 것과 같은 말일 것이다.
 또한, Page Fault에 대해서 알아보자. 현재 Page Fault는 아래와 같다.
+
 ```cpp
 static void
 page_fault (struct intr_frame *f) 
@@ -184,10 +186,12 @@ void * palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 ```
 
 palloc_get_page는 4KB의 Page를 할당하고, 이 page의 PA를 return 한다. Prototype에 flag를 받는데, PAL_USER, PAL_KERNEL, PAL_ZERO가 있다. 각각의 설명은 아래와 같다.
+
 > - PAL_USER : User Memory (0~PHYS_BASE(3GB))에 Page 할당.
 > - PAL_KERNEL : Kernel Memory (>PHYS_BASE)에 Page 할당.
 > - PAL_ZERO : Page를 0으로 initialization.
 Palloc_free_page()는 page의 PA를 Parameter로 사용하며, page를 재사용 할 수 있는 영역에 할당한다.
+
 ```cpp
 /* Frees the PAGE_CNT pages starting at PAGES. */
 void palloc_free_multiple (void *pages, size_t page_cnt) 
@@ -217,6 +221,7 @@ void palloc_free_multiple (void *pages, size_t page_cnt)
 }
 /*palloc_free_page는 palloc_free_multiple을 호출하는 하나의 line으로 이루어져 있다.*/
 ```
+
 현재 Pintos의 stack 크기는 4KB로 고정되어 있다. 이 영역의 크기를 벗어나면 현재는 Segmentation fault를 발생 시킨다. 이 Stack의 크기가 일정 조건을 충족한다면 확장하는 방향으로 구현하고자 한다.
 > -> Stack의 size를 초과하는 address의 접근이 발생하였을 때
 >
@@ -415,7 +420,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t
 static bool setup_stack (void **esp) 
 ```
 
-> stack을 초기화하는 함수이다. </br>
+> setup_stack은 stack을 초기화하는 함수이다. </br>
 > 현재는 page를 할당하고, install page함수를 통해 user virtual address UPAGE에서 kernel virtual address KPAGE로의 mapping을 page table에 추가한 후, esp를 설정하는 것까지 구현되어있다. </br>
 > 이후에 vm_entry를 생성 및 초기화하고, vm (hash table)에 insert하는 부분을 추가한다.
 
@@ -424,10 +429,39 @@ static bool setup_stack (void **esp)
 # **IV. Supplemental Page Table**
 
 ## **Analysis**
+현재 pintos는 Lazy loading, file memory mapping, swap table이 정상적으로 작동하도록 하는 함수 구현이 전혀 되어있지 않다. Lazy loading, file memory mapping, swap table이 모두 잘 작동할 수 있도록 구현이 수정되어야한다.
 
 ## **Solution**
+현재 pintos는 page fault 발생시 처리를 위해 page_fault()라는 함수가 존재한다.
+이는 I의 Analysis에서 명시하였듯, 무조건 “segmentation fault”를 발생시키고 kill(-1)을 하여 강제종료하도록 구현되어있다. 이를 vm_entry type에 맞게 처리되도록 수정한다.
 
 ## **To be Added & Modified**
+
+```cpp
+static void page_fault (struct intr_frame *f)
+```
+
+> find_vme를 이용하여 vm_entry를 찾은 후 해당 entry에 대해 page fault를 handle하는 함수를 호출한다.
+
+------------------------------
+
+```cpp
+bool handle_mm_fault(struct vm_entry *vmentry)
+```
+
+> handle_mm_fault는 page fault시 이를 handle하기 위해 필요한 함수이다.
+> page fault 발생시 palloc_get_page() 함수를 이용하여 physical page를 할당하고, switch문으로 vmentry type별로 처리한다.
+> 이 단계에서는 일단 먼저 VM_BIN에 대해서만 구현하고, 다른 type에 대해서는 아래의 단계에서 추가로 구현한다.
+> VM_BIN일 경우 load_file()함수를 이용해서 physical page에 Disk에 있는 file을 load한다.
+> 각 타입에 대해 load가 완료되었으면, install_page() 함수를 이용하여 page table로 virtual address와 physical address를 mapping한 후 그 성공 여부를 반환한다.
+------------------------------
+
+```cpp
+bool load_file (void* kaddr, struct vm_entry *vmentry)
+```
+
+> disk의 file을 physical memory로 load하는 함수이다.
+> file_read()함수를 이용하여 physical page에 data를 load하고 남은 부분은 0으로 채운다.
 
 </br>
 
@@ -505,15 +539,15 @@ struct file *file_reopen (struct file *file)  {
 int munmap(mapid_t mapid)
 ```
 
->위에서 언급한 structure 내에서 mapid에 해당 되는 vm_entry를 해제하는 system call이다. 이때, 모든 mapid value가 close_all인 경우 모든 file mapping을 제거한다.
+> 위에서 언급한 structure 내에서 mapid에 해당 되는 vm_entry를 해제하는 system call이다. 이때, 모든 mapid value가 close_all인 경우 모든 file mapping을 제거한다.
 ------------------------------
 
 ```cpp
 bool handle_mm_fault(struct vm_entry *vmentry)
 ```
 
->Switch-case 문에서 VM_FILE에 해당하는 case를 구현한다. vmentry type이 VM_FILE인 경우 data를 load할 수 있도록 한다.
-추가적으로, process_exit시에 munmap이 call되지 않아 delete되지 않아 메모리 누수를 일으킬 있는 것들을 제거한다. Project 2에서 orphan process와 비슷한 맥락의 경우이다.
+> Supplemental Page Table에서 구현하였던 handle_mm_fault() 함수의 Switch-case 문에서 VM_FILE에 해당하는 case를 추가적으로 구현한다. vmentry type이 VM_FILE인 경우 data를 load할 수 있도록 한다.
+추가적으로, process_exit시에 munmap이 호출되지 않음에 따라, delete되지 않아 메모리 누수를 일으킬 있는 것들을 제거한다. Project 2에서 orphan process와 비슷한 맥락의 경우이다.
 
 </br>
 
@@ -567,7 +601,7 @@ Frame을 새로 allocation 할 때 메모리가 부족하여 할당이 실패하
 - bool handle_mm_fault(struct vm_entry *vmentry)
 ```
 
-> vm을 다룰 때 3가지 type이 존재하는데, VM_ANON Type을 다룰 때 쓰인다. 이 type은 swap partition으로 부터 data를 load하기 때문에 이 handler에서 swapping in을 해주어야 한다.
+> Supplemental Page Table에서 구현하였던 handle_mm_fault() 함수의 Switch-case 문에서 VM_ANON에 해당하는 case를 추가적으로 구현한다. 이 type은 swap partition으로 부터 data를 load하기 때문에 이 handler에서 swapping in을 해주어야 한다.
 
 </br>
 
