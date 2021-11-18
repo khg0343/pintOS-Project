@@ -5,30 +5,31 @@
 #define VM_FILE 1
 #define VM_ANON 2
 
-#include "vm/swap.h"
 #include <hash.h>
+#include "vm/swap.h"
 #include "filesys/off_t.h"
 
-void vm_init(struct hash *vm);  /* 해시테이블 초기화 */
-void vm_destroy(struct hash *vm);   /* 해시테이블 제거 */
+void vm_init(struct hash *vm);  /* hash table 초기화 */
+void vm_destroy(struct hash *vm);   /* hash table 제거 */
 struct vm_entry *find_vme(void *vaddr); /* 현재 프로세스의 주소공간에서 vaddr에 해당하는 vm_entry를 검색 */
-bool insert_vme(struct hash *vm, struct vm_entry *vme); /* 해시테이블에 vm_entry 삽입 */
+bool insert_vme(struct hash *vm, struct vm_entry *vme); /* hash table에 vm_entry 삽입 */
 bool delete_vme(struct hash *vm, struct vm_entry *vme); /* 해시 테이블에서 vm_entry삭제 */
 bool load_file(void *kaddr, struct vm_entry *vme);
 
 struct vm_entry{
-    uint8_t type; /* VM_BIN, VM_FILE, VM_ANON의 type */
-    void *vaddr; /* vm_entry가 관리하는 virtual page number */
-    bool writable; /* True일 경우 해당 주소에 write 가능 ,False일 경우 해당 주소에 write 불가능 */
-    bool is_loaded; /* physical page의 탑재 여부를 알려주는 flag */
-    struct file* file; /* 가상주소와 맵핑된 파일 */
+    uint8_t type; /* VM_BIN, VM_FILE, VM_ANON의 타입 */
+    void *vaddr; /* virtual page number */
+    bool writable; /* 해당 주소에 write 가능 여부 */
+    bool is_loaded; /* physical memory의 load 여부를 알려주는 flag */
+    struct file* file; /* mapping된 파일 */
+    struct hash_elem elem; /* hash table element */
+
+    size_t offset; /* read 할 파일 offset */
+    size_t read_bytes; /* virtual page에 쓰여져 있는 데이터 byte 수 */
+    size_t zero_bytes; /* 0으로 채울 남은 페이지의 byte 수 */
 
     /* Memory Mapped File 에서 다룰 예정 */
     struct list_elem mmap_elem; /* mmap 리스트 element */
-
-    size_t offset; /* 읽어야 할 파일 오프셋 */
-    size_t read_bytes; /* 가상페이지에 쓰여져 있는 데이터 크기 */
-    size_t zero_bytes; /* 0으로 채울 남은 페이지의 바이트 */
 
     /* Swapping 과제에서 다룰 예정 */
     size_t swap_slot; /* 스왑 슬롯 */

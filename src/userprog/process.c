@@ -566,7 +566,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       vme->read_bytes = page_read_bytes;
       vme->zero_bytes = page_zero_bytes;
 
-      /* insert_vme() 함수를 사용해서 생성한 vm_entry를 해시테이블에 추가 */
+      /* insert_vme() 함수를 사용해서 생성한 vm_entry를 hash table에 추가 */
       insert_vme (&thread_current ()->vm, vme);
 
       /* Advance. */
@@ -609,7 +609,7 @@ setup_stack (void **esp)
   vme->is_loaded = true;
   vme->writable = true;
 
-  /* insert_vme() 함수로 해시테이블에 추가 */
+  /* insert_vme() 함수로 hash table에 추가 */
   insert_vme (&thread_current ()->vm, vme);
   
   return success;

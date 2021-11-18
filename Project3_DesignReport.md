@@ -130,8 +130,10 @@ page_fault (struct intr_frame *f)
   kill (f);
 }
 ```
+
 Current Pintos는 모든 segment를 Physical Page에 할당하므로 page fault 시 process를 kill하여 강제 종료 시킨다. 이를 바람직하지 못하며 구현하고자 하는 방향으로 생각해보면, disk에 있는지 아니면 구현 할 다른 data structure에 사용되지 않았다고 표시를 남긴채 존재하는지를 검사하여, 이를 memory에 올려서 계속 progress를 이어나갈 수 있도록 해야한다.
 위 사항들을 구현하기 위해, 현재 page address가 어떠한 방식으로 mapping되는지 알아보자.
+
 ```cpp
 static bool install_page (void *upage, void *kpage, bool writable)
 {
@@ -143,7 +145,9 @@ static bool install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 ```
-현재 pintos의 page table에 PA와 VA를 Mapping 시켜주는 함수이다. 위 함수에서 kpage가 PA를 가리키고, upage가 VA를 가리킨다. Writable은 true이면 쓰기 가능이고, false이면 읽기 전용인 page이다. 또한, pagedir이라는 것이 존재하는데, 이는 모든 VA Page에 대하여 entry를 사용한다면 접근이 비효율적이므로, 한 단계 상위 개념인 page directory를 사용하는 것이다. Project 1의 thread elem과 elem_list와 비슷한 맥락이라고 보여진다. Page directory는 Page table의 address를 가지고 있는 table이다. Page Table은 VA -> PA인 PA를 가지고 있는 Entry들의 모임이다. 또한, 현재 PA를 할당 및 해제하는 방법은 palloc_get_page(), palloc_free_page()를 이용한다. 
+
+현재 pintos의 page table에 PA와 VA를 Mapping 시켜주는 함수이다. 위 함수에서 kpage가 PA를 가리키고, upage가 VA를 가리킨다. Writable은 true이면 쓰기 가능이고, false이면 읽기 전용인 page이다. 또한, pagedir이라는 것이 존재하는데, 이는 모든 VA Page에 대하여 entry를 사용한다면 접근이 비효율적이므로, 한 단계 상위 개념인 page directory를 사용하는 것이다. Project 1의 thread elem과 elem_list와 비슷한 맥락이라고 보여진다. Page directory는 Page table의 address를 가지고 있는 table이다. Page Table은 VA -> PA인 PA를 가지고 있는 Entry들의 모임이다. 또한, 현재 PA를 할당 및 해제하는 방법은 palloc_get_page(), palloc_free_page()를 이용한다.
+
 ```cpp
 void * palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 {
@@ -164,20 +168,21 @@ void * palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
     pages = NULL;
 
   if (pages != NULL) 
-    {
-      if (flags & PAL_ZERO)
-        memset (pages, 0, PGSIZE * page_cnt);
-    }
+  {
+    if (flags & PAL_ZERO)
+      memset (pages, 0, PGSIZE * page_cnt);
+  }
   else 
-    {
-      if (flags & PAL_ASSERT)
-        PANIC ("palloc_get: out of pages");
-    }
+  {
+    if (flags & PAL_ASSERT)
+      PANIC ("palloc_get: out of pages");
+  }
 
   return pages;
 }
 /*palloc_get_page는 palloc_get_multiple을 호출하는 하나의 line으로 이루어져 있다.*/
 ```
+
 palloc_get_page는 4KB의 Page를 할당하고, 이 page의 PA를 return 한다. Prototype에 flag를 받는데, PAL_USER, PAL_KERNEL, PAL_ZERO가 있다. 각각의 설명은 아래와 같다.
 > - PAL_USER : User Memory (0~PHYS_BASE(3GB))에 Page 할당.
 > - PAL_KERNEL : Kernel Memory (>PHYS_BASE)에 Page 할당.
@@ -214,199 +219,232 @@ void palloc_free_multiple (void *pages, size_t page_cnt)
 ```
 현재 Pintos의 stack 크기는 4KB로 고정되어 있다. 이 영역의 크기를 벗어나면 현재는 Segmentation fault를 발생 시킨다. 이 Stack의 크기가 일정 조건을 충족한다면 확장하는 방향으로 구현하고자 한다.
 > -> Stack의 size를 초과하는 address의 접근이 발생하였을 때
+>
 > - Valid stack access or Segmentation Fault 판별 기준 생성
 > Valid stack access -> Stack size expansion (Limit max = 8MB)
 
 이제 아래 영역에서는 각 요소의 구현 방법을 나타낼 것이다.
-</br>
-
-# **II. Process Termination Messages**
-## **Solution**
-
-User Program이 종료되면, 종료된 Process의 Name과 어떠한 system call로 종료 되었는지에 대한 exit code를 출력한다. 출력 형식은 다음과 같다
-  
-  ```cpp
-  printf("%s: exit(%d\n)",variable_1, variable_2)
-  ```
-
->위 형식에서 variable_1은 Process의 Name이고, variable_2는 exit code 이다. 위는 Prototype으로 변수가 지정될 수 도 있고 directly하게 function을 call할 수도 있다. 각 요소를 어떻게 불러올지에 대해 알아보자.
-### 1. Process Name
-Process Name은 process_execute(const char *file_name)에서 시작된다.
-
-  ```cpp
-  /*userprog/process.c*/
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  ```
-
->process_execute에서 보면 *file_name을 parameter로 넘겨 받는다. 이를 thread를 생성할 때 argument로 넘기는데, thread structure에서 char name이라는 변수에 process Name을 저장한다. 즉, Process Name을 얻으려면 해당 thread에서 name을 얻어오는 method를 작성하면 된다.
-
-### 2. Exit Code
- PintOS Document에서 구현해야 할 System call 중 exit을 보면 선언이 다음과 같이 되어 있다.
-
-  ```cpp
-  void exit(int status)
-  ```
-
-> Parameter인 status가 exit code이므로 exit안에서 exit code를 직접적으로 다룰 수 있다. 또한, thread.c의 thread_exit을 보면 thread_exit에서 process_exit을 call하는 것을 보아 종료 method call 순서는 thread_exit -> process_exit임을 알 수 있다. thread_exit은 system call : exit을 받으면 이 과정 중에서 실행 될 것이므로, exit method에서 위 형식의 message를 출력하는 것이 용이할 것이다.
-
-## **Brief Algorithm**
-System call : void exit(int status)에서 message를 출력한다. message에 담길 정보 중 process name은 thread structure에서 받아오는 method 하나를 구현하고 exit code는 exit에 넘겨준 status를 사용한다. 이때, 주의할 점으로는 kernel thread가 종료되거나 halt가 발생한 경우에는 process가 종료된 것이 아니므로 위 메세지를 출력하지 않아야 하는데 이 경우는 애초에 다른 exit()을 호출하지 않기 때문에 해결 된 issue이다.
-
-## **To be Added & Modified**
-
-- void exit(int status)
-  > Termination message를 출력하는 code를 추가한다.
-
-- char* get_ProcessName(struct thread* cur)
-  > 종료되는 thread의 Name을 받아오는 method를 추가한다.
 
 </br>
 
-# **III. Argument Passing**
+1. Frame Table
+2. Lazy Loading
+3. Supplemental Page Table
+4. Stack Growth
+5. File Memory Mapping
+6. Swap Table
+7. On Process Termination
+
+# **II. Frame Table**
 ## **Analysis**
-I에서 분석한 Process Execution Procedure에서 언급했듯, PintOS에도 명령어를 통해 프로그램을 수행할 수 있도록 argument를 나누고 실행시키기 위해 처리하는 과정인 Argument Passing 기능이 필요하고, 이를 구현하고자 한다.
+현재 pintos는 frame table에 대해 구현된 사항이 없다.
 
 ## **Solution**
-process_execute에서 시작하여 file_name 중 첫 token을 thread_create의 첫번째 인자로 넘겨준다. file_name 전체를 start_process에 넘기고 load를 call한다. load에서도 마찬가지로 file_name의 첫 token을 file에 넣어주고 나머지 arguments들은 stack이 setup 되고 나서 별도의 method에서 stack에 넣는다.
+Frame을 효율적으로 관리하기 위해 필요한 virtual memory frame table을 구현해야한다. table의 각 entry는 user program의 page하나에 대응되고, 각각의 thread마다 frame table을 가지고 있어야한다. 각 table은 탐색이 빠른 hash로 구현하며, vaddr로 hash값을 추출한다. hash와 관련된 code는 src/lib/kernel/hash.*에 정의되어있어, 이를 사용하면 된다.
 
 ## **To be Added & Modified**
 
-- tid_t process_execute(const char *file_name)
-  > thread structure의 member인 name에 넣는 부분을 수정한다.
+```cpp
+/* vm/page.h */
+struct vm_entry{
+  uint8_t type; /* VM_BIN, VM_FILE, VM_ANON의 타입 */
+  void *vaddr; /* virtual page number */
+  bool writable; /* 해당 주소에 write 가능 여부 */
+  bool is_loaded; /* physical memory의 load 여부를 알려주는 flag */
+  struct file* file; /* mapping된 파일 */
+  struct hash_elem elem; /* hash table element */
 
-- bool load(const char *file_name, void (**eip) (void), void **esp)
-  > filesys_open에서 넘겨주는 인자를 수정하고, setup_stack 이후에 stack에 arguments를 넣는 method를 추가한다.
+  size_t offset; /* read 할 파일 offset */
+  size_t read_bytes; /* virtual page에 쓰여져 있는 데이터 byte 수 */
+  size_t zero_bytes; /* 0으로 채울 남은 페이지의 byte 수 */
+}
+```
 
-- void putArguments(char* file_name, void **esp)
-  > 위에서 언급한 setup_stack 이후 넣는 추가 method이다. file_name을 넘겨 받아 arguments의 개수, 값, 주소를 파악하여 esp를 조정하면서 넣어야 하는 값을 stack에 넣어준다.
+> frame table의 entry를 위와 같이 정의한다.
+------------------------------
+
+```cpp
+/* threads/thread.h*/
+struct thread {
+  ...
+  #ifdef USERPROG
+    ...
+    struct hash vm;     /* thread가 가진 virtual address space를 관리하는 hash table */
+  #endif
+  ...
+}
+```
+
+> 각 thread마다 frame을 관리하는 table을 hash type으로 추가한다.
+------------------------------
+
+```cpp
+/* vm/page.c */
+void vm_init (struct hash *vm) {
+  //hash_init() 함수를 이용하여 vm (hash table)을 init
+}
+
+//참고 /* hash.c */
+bool hash_init (struct hash *h, hash_hash_func *hash, hash_less_func *less, void *aux)
+```
+
+> frame table을 초기화하는 함수를 추가한다
+------------------------------
+
+```cpp
+/* vm/page.c */
+void vm_destroy (struct hash *vm) {
+  // hash_destroy() 함수를 이용하여 vm (hash table)을 destroy
+}
+
+//참고 /* hash.c */
+void hash_destroy (struct hash *h, hash_action_func *destructor)
+```
+
+> frame table을 destroy하는 함수를 추가한다
+------------------------------
+
+```cpp
+/* vm/page.c */
+static unsigned vm_hash_func (const struct hash_elem *e, void *aux) {
+  // element에 대한 vm_entry를 hash_entry() 함수를 이용하여 찾고, 
+  // 해당 entry의 vaddr에 대한 hash key를 hash_int() 함수를 이용하여 구한 후 return
+}
+```
+
+> element에 대한 hash key를 반환하는 함수를 추가한다 </br>
+> vm_init에 필요하다
+------------------------------
+
+```cpp
+/* vm/page.c */
+static bool vm_less_func (const struct hash_elem *a, const struct hash_elem *b, void *aux) {
+  // 두 element에 대한 vm_entry를 hash_entry() 함수를 이용하여 찾고, 각 entry의 vaddr을 비교
+}
+```
+  
+> 두 element에 대한 vm_entry의 vaddr값을 비교하는 함수를 추가한다 (a가 작으면 true, 크면 false return) </br>
+> vm_init에 필요하다
+------------------------------
+
+```cpp
+/* vm/page.c */
+static void
+vm_destroy_func(struct hash_elem *e, void *aux UNUSED)
+{
+  // element에 대한 hash_entry() 함수를 이용하여 찾고, vm_entry를 해당 entry를 free
+}
+```
+
+> element에 대한 vm_entry를 free시키는 함수를 추가한다 </br>
+> vm_destroy에 필요하다
+------------------------------
+
+```cpp
+/* vm/page.c */
+bool insert_vme(struct hash *vm, struct vm_entry *vme) {
+  // hash_insert() 함수를 이용하여 vm (hash table)에 vme (entry)를 insert
+}
+```
+
+> hash table에 vm_entry를 삽입하는 함수를 추가한다
+------------------------------
+
+```cpp
+/* vm/page.c */
+bool delete_vme(struct hash *vm, struct vm_entry *vme) {
+  // hash_delete() 함수를 이용하여 vm (hash table)에서 vme (entry)를 delete
+}
+```
+
+> hash table에서 vm_entry를 삭제하는 함수를 추가한다
+------------------------------
+
+```cpp
+/* vm/page.c */
+struct vm_entry *find_vme (void *vaddr) {
+  // pg_round_down() 함수를 이용하여 vaddr의 page number를 구하고,
+  // hash_elem을 hash_find() 함수를 이용해서 찾는다.
+  // 해당 hash_elem에 대한 vm_entry 를 hash_entry()를 이용하여 구한 후 return */
+}
+```
+
+> vaddr에 해당하는 hash_elem의 vm_entry를 찾아주는 함수를 추가한다
+------------------------------
+
+```cpp
+/* userprog/process.c */
+static void start_process (void *file_name_)
+```
+
+> process가 시작할 때, vm_init()를 호출하는 부분을 추가한다.
+------------------------------
+
+```cpp
+/* userprog/process.c */
+void process_exit (void)
+```
+
+> process가 종료될 때, vm_destroy()를 호출하는 부분을 추가한다.
+------------------------------
 
 </br>
 
-# **IV. System Call**
-
+# **III.Lazy Loading**
 ## **Analysis**
-
-I에서 분석한 System Call Procedure에서 언급했듯, system call을 수행할 수 있도록 그 handler를 구현하여야한다. syscall macro를 통해 user stack에 push된 system call argument들에 대한 정보를 통해 system call을 수행한다. 이때 stack에 입력된 정보들을 읽기 위해 stack pointer를 통해 argument를 pop하고, 해당 system call number에 대한 기능을 수행하는 과정을 구현하여야한다.
+현재 pintos는 process execute에 필요한 Disk의 file에 대해 바로 physical memory에 page를 할당하여 load하고, page fault가 발생하면 error로 간주하여 program 실행을 중지한다. 사용하지 않는 data가 load될 경우, physical memeory를 차지하여 메모리가 낭비된다. 따라서 virtual memory의 page를 이용하여 필요한 data만 load되도록 구현하고, page fault handler도 수정해야한다.
 
 ## **Solution**
-
-system call handler를 구현하기에 앞서 먼저 user stack에 담긴 argument를 pop하는 함수(getArguments())를 구현하여야한다. 또한, esp주소가 valid한지 확인하기 위한 함수(is_addr_valid())를 구현하여야한다. 마지막으로, 가장 중요한 system call에 해당하는 기능에 대한 구현이 이루어져야한다.
-
-### **Implement the following system calls**
-
-**1. void halt(void)**
-
-    shutdown_power_off() 함수를 호출하여 PintOS를 종료하는 함수.
-
-**2. void exit(int status)**
-    
-    현재 실행중인 user program을 종료하고, 해당 status를 kernel에 return하는 함수.
-    current thread를 종료하고, parent process에 해당 status를 전달한다.
-    
-**3. pid_t exec(const char * cmd_line)**
-    
-    cmd_line에 해당하는 이름의 program을 실행하는 함수.
-    program 실행을 위해 thread_create를 통해 child process생성하고 자식과 부모와의 관계를 thread 구조체에 저장해둔다. 만약 program 실행을 실패할 경우 -1를 return하고, 성공할 경우에는 새로 생성된 process의 pid를 return한다. 이 system call에 대해 synchronization이 보장되어야한다. 이를 위해 child process에 대한 semaphore생성이 필요하다.
-
-**4. int wait (pid_t pid)**
-
-    pid값을 가진 child process가 종료될 때까지 기다리는 함수.
-    thread에 저장된 child_list에서 pid와 동일한 child thread를 찾고, 해당 thread가 종료될 때까지 wait한다.
-    이 system call에 대해 synchronization이 보장되어야한다. 이를 위해 wait process에 대한 semaphore생성이 필요하다.
-    wait에 성공하였을 경우 child_list에서 해당 thread를 삭제하고, exit status를 return한다.
-    반면, 아래와 같이 wait에 실패하거나, 올바르지 않은 호출일 경우 -1을 return한다.
-    - 이미 종료된 child를 parent가 기다리게 되는 경우
-    - pid가 direct child가 아닐 경우 (즉, 자신이 spawn한 child가 아닐 경우)
-    - 이미 해당 pid에 대해 과거에 wait를 호출하여 기다리고 있을 경우 
-
-**5. bool create(const char * file, unsigned initial_size)**
-
-    파일명이 file인 file을 새로 만드는 함수. 해당 file의 size는 initial_size로 initialize해준다. 성공시 true를, 실패시 false를 return한다.
-
-**6. bool remove(const char * file)**
-
-    파일명이 file인 file을 삭제하는 함수. 파일의 open/close 여부에 관계없이 삭제 가능하며, open된 파일을 삭제할 경우 다시 close할 수 없다. 성공시 true를, 실패시 false를 return한다.
-
-**7. int open(const char * file)**
-
-    파일명이 file인 file을 open하고, file descriptor가 file을 가리키게 하는 함수.
-    성공할 경우 file descriptor값을 return하고, 실패시 -1를 return한다.
-    앞에서 언급하였듯, file descriptor의 0과 1은 stdin, stdout으로 indexing 되어있으므로 2부터 사용하지 않은 가장 작은 숫자를 할당하도록 한다. 
-
-**8. int filesize(int fd)**
-
-    File Descriptor를 통해 open된 file의 size를 return하는 함수.
-
-**9. int read(int fd, void * buffer, unsigned size)**
-
-    Open된 file의 file descriptor에서 size byte만큼 읽고 buffer에 내용을 저장하는 함수.
-    fd로 0이 주어질 경우, stdin을 의미하며 이는 keyboard input을 통해 입력받아야한다. 따라서 input_getc() 함수를 이용해 입력된 내용을 buffer에 저장하고 입력된 byte를 return한다.
-    fd가 0이 아닐 경우, 해당 file descriptor에 해당하는 file을 file_read함수를 통해 읽고 그 읽은 byte를 return한다.
-    읽기에 성공하였을 경우 read한 byte를 return하지만, 실패하였을 경우 -1을 return한다.
-    파일을 읽는 동안 다른 thread가 파일에 접근하지 못하도록 file_lock을 acquire하고, 작업이 끝나면 release한다.
-
-**10. int write(int fd, const void * buffer, unsigned size)**
-
-    Open된 file의 file descriptor에서 buffer에 내용을 size byte만큼 쓰는 함수.
-    fd로 1이 주어질 경우, stdout을 의미하며 이는 console output을 통해 출력하여야한다. 따라서 putbuf() 함수를 이용해 buffer에 저장된 내용을 console에 입력하고 입력된 byte를 return한다.
-    fd가 1이 아닐 경우, 해당 file descriptor에 해당하는 file에 file_write함수를 통해 쓰고 그 쓴 byte를 return한다.
-    쓰기에 성공하였을 경우 write byte를 return하지만, 실패하였을 경우 -1을 return한다.  
-    파일을 쓰는 동안 다른 thread가 파일에 접근하지 못하도록 file_lock을 acquire하고, 작업이 끝나면 release한다.
-
-**11. void seek (int fd, unsigned position)**
-  
-    Open된 file의 file descriptor에서 읽거나 쓸 다음 byte를 position만큼 이동시키는 함수.
-
-**12. unsigned tell (int fd)**
-
-    Open된 file의 file descriptor에서 읽거나 쓸 다음 byte의 position을 return하는 함수.
-
-**13. void close (int fd)**
-
-    File Descriptor를 통해 file을 close하는 함수. 관련된 file descriptor의 상태도 변경해주어야한다.
+처음에는 physical memory에 어떤 것도 load하지 않고, 각 file의 pointer 및 offset, size 등의 정보는 vm_entry에 저장한다. process execute를 통해 특정 virtual address에 접근할 때 physical page가 mapping되어 있지 않다면, page fault가 발생한다. page fault handler를 통해 접근이 시도된 vm_entry를 탐색한 후, vm_entry에 저장된 정보를 통해 data를 읽어 physical frame에 load하도록 구현한다.
+또한, page fault handler에서 Lazy Loading(I/O가 필요)과 Wrong memory access(I/O가 필요X) 각각의 상황이 동시에 발생할 경우, 후자의 상황에 대해 먼저 처리하고 전자의 상황을 처리해야한다.
 
 ## **To be Added & Modified**
 
-- struct thread
+```cpp
+/* userprog/process.c */
+static bool load_segment (struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
+```
 
-  > 1. fd에 대한 file table로의 pointer를 저장하는 이중포인터 (struct file** file_descriptor_table) </br>
-  > 2. 자식 프로세스의 list (struct list child_list) </br> 
-  > 3. 위 list를 관리하기 위한 element (struct list_elem child_elem) </br> 
-  > 4. exec()에서 사용되는 semaphore (struct semaphore sema_child) </br> 
-  > 5. wait()에서 사용되는 semaphore (struct semaphore sema_wait) </br>
-  > 6. thread의 status를 저장하는 변수 (int status)
+> load_segment는 segment를 process의 virtual address space에 load하는 함수이다. </br>
+> 현재는 load_segment가 실행되면 page를 할당하고, file을 page에 load하고 process's address space에 page를 저장하도록 구현되어있다. </br>
+> 이를 vm_entry를 할당하고 초기화 하며, vm (hash table)에 insert하도록 수정한다.
 
-- userprog/syscall.c
-  > file에 접근해 있는 동안 다른 thread가 접근하지 못하도록 lock하기 위한 변수를 추가한다. (struct lock file_lock)
+```cpp
+/* userprog/process.c */
+static bool setup_stack (void **esp) 
+```
 
-- void getArguments()(int *arg, void* sp, int cnt)
-  > stack pointer(sp)로부터 cnt만큼의 argument를 stack에서 pop하여 *arg에 저장하는 변수
+> stack을 초기화하는 함수이다. </br>
+> 현재는 page를 할당하고, install page함수를 통해 user virtual address UPAGE에서 kernel virtual address KPAGE로의 mapping을 page table에 추가한 후, esp를 설정하는 것까지 구현되어있다. </br>
+> 이후에 vm_entry를 생성 및 초기화하고, vm (hash table)에 insert하는 부분을 추가한다.
 
-- bool is_addr_valid(void* addr)
-  >입력된 주소값이 user memory에 해당하는 valid한 함수인지 확인하는 함수이다
+</br>
 
-- syscall_handler (struct intr_frame *f UNUSED)
+# **V. Stack Growth**
 
-  ```cpp
-  /*userprog/syscall.c*/
-  static void
-  syscall_handler (struct intr_frame *f UNUSED) 
-  {
-      if(is_addr_valid(f->esp)) {
-        switch (*(int*)f->esp) {
-          case SYS_HALT : sys_halt(); break;
-          case SYS_EXIT : getArguments(); sys_exit((int)argv[0]); break;
-          .
-          .
-          case SYS_CLOSE : ...
-          default : sys_exit(-1); //invalid syscall number
-        }
-      } else sys_exit(-1);
-  }
-  ```
+## **Analysis**
 
-  > esp 주소가 valid한지 확인하고, 유효하다면 system call number에 따라 switch문으로 나누어 syscall 함수를 실행한다.
-# **VI. File Memory Mapping**  
+## **Solution**
+
+## **To be Added & Modified**
+
+
+
+</br>
+
+# **IV. Supplemental Page Table**
+
+## **Analysis**
+
+## **Solution**
+
+## **To be Added & Modified**
+
+</br>
+
+# **VI. File Memory Mapping**
+
+## **Analysis**
 Current Pintos System에는 System Call : mmap(), mummap()이 없다. 따라서, file memory mapping이 불가능하다. 또한, Pintos document에 의거하여 read & write system call을 사용하지 말고, mmap을 이용하여 vm과 mapping한다고 한다. 이를 통해, 동일한 파일을 여러 process들의 vm에 mapping하여 접근 가능한 것이다.  이를 이루기 위해 위의 system call을 구현한다. mmap()과 mummap()의 역할은 아래와 같다.
 - mmap() : Lazy Loading에 의한 File Data를 memory에 load.
 - munmap() : mmap으로 형성 된 file mapping을 delete.
@@ -416,70 +454,100 @@ Current Pintos System에는 System Call : mmap(), mummap()이 없다. 따라서,
 - elem : 이 data structure을 관리할 list가 필요하다. 이를 위해 리스트 연결을 할 구조체.
 - vme_list : 이 data에 해당하는 모든 vm_entry의 list.
 추가로, file memory mapping을 완전히 구현하기 위해서 file을 VA로 관리한다. VA를 관리 하기 위해 Virtual Address entry를 이용하여 hash_table로 관리한다.
+
 ## **To be Added & Modified**
 ```cpp 
 int mmap(int fd, void *addr)
 ```
 > Lazy loading에 의해 file data를 memory에 load한다. fd는 process의 VA Space에 mapping할 file descriptor이고, addr은 mapping을 시작 할 주소이다. 이는 성공 시 mapping id를 return 하고, 실패 시 error -1을 return한다. 또한, mmap으로 mapping이 된 file은 mummap, process의 terminate 이전에는 접근이 가능해야 한다. 예로, munmap() 이전에 close() system call이 호출 되더라도 file mapping은 유효하여야 한다는 것이다. 이를 위해, filsys/file.c에 있는 method를 사용한다.
+
 ```cpp
-struct file *file_reopen (struct file *file) 
-{
+struct file *file_reopen (struct file *file)  {
   return file_open (inode_reopen (file->inode));
 }
 ```
+
 > File object를 copy하여 copy된 object의 주소를 return한다.
 끝으로, process의 file descriptor를 탐색하기 위해 project 2에서 구현한 method를 사용하고자 한다.
-```cpp 
+
+```cpp
 int munmap(mapid_t mapid)
 ```
+
 >위에서 언급한 structure 내에서 mapid에 해당 되는 vm_entry를 해제하는 system call이다. 이때, 모든 mapid value가 close_all인 경우 모든 file mapping을 제거한다.
+
 ```cpp
-- bool handle_mm_fault(struct vm_entry *vmentry)
+bool handle_mm_fault(struct vm_entry *vmentry)
 ```
+
 >Switch-case 문에서 VM_FILE에 해당하는 case를 구현한다. vmentry type이 VM_FILE인 경우 data를 load할 수 있도록 한다.
-추가적으로, process_exit시에 munmap이 call되지 않아 delete되지 않아 메모리 누수를 일으킬 있는 것들을 제거한다. Project 2에서 orphan process와 비슷한 맥락의 경우이다. 
+추가적으로, process_exit시에 munmap이 call되지 않아 delete되지 않아 메모리 누수를 일으킬 있는 것들을 제거한다. Project 2에서 orphan process와 비슷한 맥락의 경우이다.
+
+</br>
+
 # **VII. Swap Table**
+
+## **Analysis**
 Frame을 새로 allocation 할 때 메모리가 부족하여 할당이 실패하는 경우가 존재한다. 이 경우에 Swapping이 필요한데, Swapping을 하기 위해 Swap disk와 Swap table이 필요하다. 원리는 간단하다. 메모리에 공간이 부족하다면 Swap table에 frame을 넣고 그 공간을 사용하는 것이다. 그렇다면 어떤 frame을 swap table에 넣어야 하는지는 Policy가 필요하다. Policy는 LRU Algorithm, Clock Algorithm 등이 있는데, LRU Algorithm은 Less Recent Used의 약자로 말 그대로이고, Clock Algorithm은 frame을 순회하면서 어떠한 bit가 1이면 해당 frame을 swapping하는 것이다. 본 과제에서는 Clock Algorithm이 bit를 사용하여 구현하기 전에는 좀 더 구현이 용이할 것으로 보이기도 하고, 가시적이어서 해당 algorithm을 사용하려고 한다.
-현재 Pintos의 swap partition은 4MB이며, 4KB로 나누어 관리를 한다. 이 Partition의 frame들을 연결해 줄 필요가 있기 때문에, Swap table은 list type으로 구현한다. 
+현재 Pintos의 swap partition은 4MB이며, 4KB로 나누어 관리를 한다. 이 Partition의 frame들을 연결해 줄 필요가 있기 때문에, Swap table은 list type으로 구현한다.
+
 ## **Solution**
 크게 3가지의 method가 필요할 것으로 생각한다.
+
 1. swap_init()
-- Swapping을 다룰 부분을 initialization 하는 method이다.
+   - Swapping을 다룰 부분을 initialization 하는 method이다.
 2. swap_in()
-- 메모리가 부족하여 swap table로 빼두었던 frame을 다시 메모리에 올리는 method이다.
+   - 메모리가 부족하여 swap table로 빼두었던 frame을 다시 메모리에 올리는 method이다.
 3. swap_out()
-- 메모리가 부족하여 swap table로 frame을 빼는 method이다.
+   - 메모리가 부족하여 swap table로 frame을 빼는 method이다.
+
 ## **To be Added & Modified**
+
 ```cpp
 - void swap_init()
 ```
+
 > Swapping을 다룰 영역을 initialization한다.
+
 ```cpp
 - void swap_in(size_t used_index, void *kaddr)
 ```
+
 > used_index의 swap table 공간에 있는 data를 kaddr로 넣어준다. 이는 frame을 다시 메모리에 적재하는 역할을 할 것이다.
+
 ```cpp
 - size_t swap_out(void *kaddr)
 ```
+
 > 사용 가능한 memory가 존재하지 않을 때, Clock algorithm에 의해 선정된 victim frame을 swap partition으로 넣어준다. Dirty bit를 확인하여 true라면 write back을 하여 disk에 기록한다.
+
 ```cpp
 - static struct list_elem* next_victim_frame()
 ```
+
 > 다음 Swapping 시 행해질 victim frame을 탐색 및 선정하는 method이다.
+
 ```cpp
 - bool handle_mm_fault(struct vm_entry *vmentry)
 ```
+
 > vm을 다룰 때 3가지 type이 존재하는데, VM_ANON Type을 다룰 때 쓰인다. 이 type은 swap partition으로 부터 data를 load하기 때문에 이 handler에서 swapping in을 해주어야 한다.
+
 # **VIII. On Process Termination**
+
 ## **Solution**
 On process termination에서 요구하는 것은 Process가 종료될 때 할당한 모든 resourece들, 예로 frame table과 같은 것들을 delete 해주라는 것이다. 단, Copy on Write가 필요한 page는 dirty bit를 판단 기준으로 삼아 disk에 써준다. 이를 위해서 System call : munmap을 구현하여 사용하고자 한다.
 
 ## **To be Added & Modified**
+
 ```cpp
 void process_exit (void)
 ```
+
 > process가 종료되는 시점에서 해당 thread의 자원을 모두 해제해야 한다. 따라서, process_exit을 수정하여 구현하고자 하고, munmap을 사용하여 current thread의 resource들을 반복문을 통해 순회하며 해제한다.
+
 ```cpp
 void munmap (mapid_t);
 ```
+
 > munmap에 Copy on write를 추가한다. pagedir.c에 있는 pagedir_is_dirty()를 사용하여 dirty bit를 판단하고, dirty == true라면 disk에 write back, false라면 바로 해제할 수 있도록 구현한다.
