@@ -29,16 +29,21 @@
 ## **Analysis**
 각 Process는 위와 같은 Address Space를 가지는데, 내부에 Stack, BSS, Data, Code의 영역을 가진다.
 현재 Pintos의 Memory Layout은 아래와 같다.
-> - 31                12 11     0
-> - +------------------+--------+
-> - |  Page Number     | Offset |
-> - +------------------+--------+
+
+31　　　　　　12 11　　 0 </br>
++------------------+--------+ </br>
+|  Page Number     | Offset | </br>
++------------------+--------+ </br>
+
 위를 Virtual Address라 하는데, 현재 구현 되어있는 PTE(Page Table Entry)가 VA를 Physical Address로 변환하여 가리켜준다. PA의 형태는 아래와 같다.
-> - 31                12 11     0
-> - +------------------+--------+
-> - |  Frame Number    | Offset |
-> - +------------------+--------+
+
+31　　　　　　12 11　　 0 </br>
++------------------+--------+ </br>
+|  Frame Number    | Offset | </br>
++------------------+--------+ </br>
+
 Current Pintos System은 process_exec() -> load()-> load_segment() -> setup_stack()을 거쳐 Physical Memory에 data를 적재하였다. load_segment()를 살펴보자.
+
 ```cpp
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
@@ -225,7 +230,7 @@ void palloc_free_multiple (void *pages, size_t page_cnt)
 현재 Pintos의 stack 크기는 4KB로 고정되어 있다. 이 영역의 크기를 벗어나면 현재는 Segmentation fault를 발생 시킨다. 이 Stack의 크기가 일정 조건을 충족한다면 확장하는 방향으로 구현하고자 한다.
 > -> Stack의 size를 초과하는 address의 접근이 발생하였을 때
 >
-> - Valid stack access or Segmentation Fault 판별 기준 생성
+> - Valid stack access or Segmentation Fault 판별 기준 생성 </br>
 > Valid stack access -> Stack size expansion (Limit max = 8MB)
 
 이제 아래 영역에서는 각 요소의 구현 방법을 나타낼 것이다.
@@ -554,7 +559,7 @@ bool handle_mm_fault(struct vm_entry *vmentry)
 # **VII. Swap Table**
 
 ## **Analysis**
-Frame을 새로 allocation 할 때 메모리가 부족하여 할당이 실패하는 경우가 존재한다. 이 경우에 Swapping이 필요한데, Swapping을 하기 위해 Swap disk와 Swap table이 필요하다. 원리는 간단하다. 메모리에 공간이 부족하다면 Swap table에 frame을 넣고 그 공간을 사용하는 것이다. 그렇다면 어떤 frame을 swap table에 넣어야 하는지는 Policy가 필요하다. Policy는 LRU Algorithm, Clock Algorithm 등이 있는데, LRU Algorithm은 Less Recent Used의 약자로 말 그대로이고, Clock Algorithm은 frame을 순회하면서 어떠한 bit가 1이면 해당 frame을 swapping하는 것이다. 본 과제에서는 Clock Algorithm이 bit를 사용하여 구현하기 전에는 좀 더 구현이 용이할 것으로 보이기도 하고, 가시적이어서 해당 algorithm을 사용하려고 한다.
+Frame을 새로 allocation 할 때 메모리가 부족하여 할당이 실패하는 경우가 존재한다. 이 경우에 Swapping이 필요한데, Swapping을 하기 위해 Swap disk와 Swap table이 필요하다. 원리는 간단하다. 메모리에 공간이 부족하다면 Swap table에 frame을 넣고 그 공간을 사용하는 것이다. 그렇다면 어떤 frame을 swap table에 넣어야 하는지는 Policy가 필요하다. Policy는 LRU Algorithm, Clock Algorithm 등이 있는데, LRU Algorithm은 Least Recently Used의 약자로 말 그대로 가장 오래전에 사용된 항목을 선택하는 것이고, Clock Algorithm은 frame을 순회하면서 어떠한 bit가 1이면 해당 frame을 swapping하는 것이다. 본 과제에서는 Clock Algorithm이 bit를 사용하여 구현하기 전에는 좀 더 구현이 용이할 것으로 보이기도 하고, 가시적이어서 해당 algorithm을 사용하려고 한다.
 현재 Pintos의 swap partition은 4MB이며, 4KB로 나누어 관리를 한다. 이 Partition의 frame들을 연결해 줄 필요가 있기 때문에, Swap table은 list type으로 구현한다.
 
 ## **Solution**
