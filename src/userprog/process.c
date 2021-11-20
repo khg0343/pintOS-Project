@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -218,10 +219,12 @@ process_exit (void)
   uint32_t *pd;
 
   int i;
-  for(i = 2; i < cur->fd_nxt; i++) /* file descriptor 테이블의 최대값을 이용해 file descriptor의 최소값인 2가 될 때까지 파일을 닫음 */
-	  process_close_file(i);
+  for(i = 2; i < cur->fd_nxt; i++) process_close_file(i);/* file descriptor 테이블의 최대값을 이용해 file descriptor의 최소값인 2가 될 때까지 파일을 닫음 */
+	  
   
   palloc_free_page(cur->fd_table); /* file descriptor 테이블 메모리 해제 */
+  
+  for (i = 1; i < cur->mmap_nxt; i++) munmap(mmap_file);
 
   vm_destroy(&cur->vm);
 
@@ -703,18 +706,21 @@ bool handle_mm_fault(struct vm_entry *vme)
   switch(vme->type)                
 	{
 		case VM_BIN: /* VM_BIN일 경우 load_file()함수를 이용해서 물리메모리에 로드 */
-      if (!load_file(kaddr, vme)) {
-        palloc_free_page(kaddr);
-        return false;
-      }
+      success = load_file(kaddr, vme);
       break;
 		case VM_FILE:
+      success = load_file(kaddr, vme);
       break;
 		case VM_ANON:
       break;
 		default:
       break;
 	}
+  
+  if (!success) {
+        palloc_free_page(kaddr);
+        return false;
+  }
 
   /* install_page를 이용해서 물리페이지와 가상페이지 맵핑 */
   if (!install_page(vme->vaddr, kaddr, vme->writable)) {

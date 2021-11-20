@@ -210,6 +210,9 @@ thread_create (const char *name, int priority,
     t->fd_table = palloc_get_page(PAL_ZERO); /* File Descriptor 테이블에 메모리 할당 */
     if(t->fd_table == NULL) return TID_ERROR;
 
+    list_init (&t->mmap_list);
+    t->next_mapid = 1;
+
   #endif
 
   /* Add to run queue. */

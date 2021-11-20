@@ -11,7 +11,8 @@
         "thread.h": "c",
         "filesys.h": "c",
         "syscall.h": "c",
-        "hash.h": "c"
+        "hash.h": "c",
+        "string_view": "c"
     },
     "cmake.configureOnOpen": true
 }
