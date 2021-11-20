@@ -211,7 +211,7 @@ thread_create (const char *name, int priority,
     if(t->fd_table == NULL) return TID_ERROR;
 
     list_init (&t->mmap_list);
-    t->next_mapid = 1;
+    t->mmap_nxt = 1;
 
   #endif
 

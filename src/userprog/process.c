@@ -16,6 +16,7 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "vm/page.h"
@@ -224,7 +225,7 @@ process_exit (void)
   
   palloc_free_page(cur->fd_table); /* file descriptor 테이블 메모리 해제 */
   
-  for (i = 1; i < cur->mmap_nxt; i++) munmap(mmap_file);
+  for (i = 1; i < cur->mmap_nxt; i++) munmap(i);
 
   vm_destroy(&cur->vm);
 

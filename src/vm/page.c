@@ -2,6 +2,8 @@
 #include "vm/page.h"
 #include "threads/vaddr.h"
 #include "threads/thread.h"
+#include "threads/malloc.h"
+#include "filesys/file.h"
 
 static unsigned vm_hash_func(const struct hash_elem *, void * UNUSED);
 static bool vm_less_func(const struct hash_elem *a, const struct hash_elem *b);

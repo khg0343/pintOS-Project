@@ -7,6 +7,7 @@
 
 #include <hash.h>
 #include "vm/swap.h"
+#include "userprog/syscall.h"
 #include "filesys/off_t.h"
 
 void vm_init(struct hash *vm);  /* hash table 초기화 */
@@ -22,7 +23,6 @@ struct vm_entry{
     bool writable; /* 해당 주소에 write 가능 여부 */
     bool is_loaded; /* physical memory의 load 여부를 알려주는 flag */
     struct file* file; /* mapping된 파일 */
-    struct hash_elem elem; /* hash table element */
 
     size_t offset; /* read 할 파일 offset */
     size_t read_bytes; /* virtual page에 쓰여져 있는 데이터 byte 수 */

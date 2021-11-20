@@ -113,7 +113,7 @@ struct thread
 
     struct file *file_run;   /* 현재 실행중인 파일 추가 */
 
-    struct hash vm_table;     /* thread가 가진 virtual address space를 관리하는 hash table */
+    struct hash vm;     /* thread가 가진 virtual address space를 관리하는 hash table */
 
     struct list mmap_list;
     int mmap_nxt;

@@ -5,7 +5,10 @@
 typedef int pid_t;
 typedef int mapid_t;
 
-struct vm_entry *check_address(void* addr);
+struct vm_entry *check_address(void *addr);
+void check_valid_buffer(void *buffer, unsigned size, void *esp, bool to_write);
+void check_valid_string(const void *str);
+
 // bool check_address (void *addr);
 void get_argument(void *esp, int *arg, int count);
 
@@ -23,5 +26,8 @@ int write (int fd, const void *buffer, unsigned size);
 void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
+mapid_t mmap(int fd, void *addr);
+void munmap(mapid_t mapid);
+
 
 #endif /* userprog/syscall.h */

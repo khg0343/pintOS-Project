@@ -2,6 +2,7 @@
 #include "userprog/process.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include "threads/malloc.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -144,7 +145,7 @@ int filesize(int fd)
   struct file *f;
   if ((f = process_get_file(fd)))
   {                          /* file descriptor를 이용하여 파일 객체 검색 */
-    return file_file_len(f); /* 해당 파일의 길이를 리턴 */
+    return file_length(f); /* 해당 파일의 길이를 리턴 */
   }
   return -1; /* 해당 파일이 존재하지 않으면 -1 리턴 */
 }
@@ -275,10 +276,16 @@ mmap(int fd, void *addr)
 
 void munmap(mapid_t mapid)
 {
-  struct mmap_file *f = find_mmap_file(mapid);
+  struct mmap_file *f;
+  struct list_elem *e;
+  for (e = list_begin(&thread_current()->mmap_list); e != list_end(&thread_current()->mmap_list); e = list_next (e))
+  {
+    struct mmap_file *f = list_entry (e, struct mmap_file, elem);
+    if (f->mapid == mapid) break;
+  }
+
   if (!f) return;
   
-  struct list_elem *e;
   for (e = list_begin(&f->vme_list); e != list_end(&f->vme_list);)
   {
     struct vm_entry *vme = list_entry(e, struct vm_entry, mmap_elem);
