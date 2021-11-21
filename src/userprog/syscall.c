@@ -1,5 +1,6 @@
 #include "userprog/syscall.h"
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/malloc.h"
@@ -13,11 +14,11 @@
 static void syscall_handler(struct intr_frame *);
 struct lock lock_file;
 
-struct vm_entry *check_address(void *addr)
+struct vm_entry *check_address(void *addr, void* esp)
 {
-  // if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
-  if (!is_user_vaddr(addr))
-    exit(-1);
+  if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
+  // if (!is_user_vaddr(addr))
+  //   exit(-1);
 
   return find_vme(addr);
 
@@ -25,16 +26,14 @@ struct vm_entry *check_address(void *addr)
   /*find_vme() 사용*/
 }
 
-void check_valid_buffer(void *buffer, unsigned size, void *esp, bool to_write)
+void check_valid_buffer (void *buffer, unsigned size, void *esp, bool to_write)
 {
   int i;
   for (i = 0; i < size; i++)
   {
-    struct vm_entry *vme = check_address(buffer + i);
-    if (vme == NULL)
-      exit(-1);
-    if (to_write == true && vme->writable == false)
-      exit(-1);
+    struct vm_entry *vme = check_address(buffer + i, esp);
+    if (!vme) exit(-1);
+    if (to_write && !vme->writable) exit(-1);
   }
   /* 인자로 받은 buffer부터 buffer + size까지의 크기가 한 페이지의 크기를 넘을 수도 있음 */
   /* check_address를 이용해서 주소의 유저영역 여부를 검사함과 동시에 vm_entry 구조체를 얻음 */
@@ -42,13 +41,11 @@ void check_valid_buffer(void *buffer, unsigned size, void *esp, bool to_write)
   /* 위 내용을 buffer 부터 buffer + size까지의 주소에 포함되는 vm_entry들에 대해 적용 */
 }
 
-void check_valid_string(const void *str)
+void check_valid_string(const void* str, void* esp)
 {
   /* str에 대한 vm_entry의 존재 여부를 확인*/
-  if (check_address(str) == NULL)
-    exit(-1);
+  if (check_address(str, esp) == NULL) exit(-1);
 
-  /* check_address()사용*/
 }
 
 // bool check_address(void *addr)
@@ -62,7 +59,7 @@ void get_argument(void *esp, int *arg, int count)
   int i;
   for (i = 0; i < count; i++)
   {
-    if (!check_address(esp + 4 * i))
+    if (!check_address(esp + 4 * i, esp))
       exit(-1);
     arg[i] = *(int *)(esp + 4 * i);
   }
@@ -154,8 +151,8 @@ int read(int fd, void *buffer, unsigned size)
 {
   int read_size = 0;
   struct file *f;
-  if (!check_address(buffer))
-    exit(-1);
+  // if (!check_address(buffer, buffer))
+  //   exit(-1);
 
   lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
@@ -276,11 +273,11 @@ mmap(int fd, void *addr)
 
 void munmap(mapid_t mapid)
 {
-  struct mmap_file *f;
+  struct mmap_file *f = NULL;
   struct list_elem *e;
   for (e = list_begin(&thread_current()->mmap_list); e != list_end(&thread_current()->mmap_list); e = list_next (e))
   {
-    struct mmap_file *f = list_entry (e, struct mmap_file, elem);
+    f = list_entry (e, struct mmap_file, elem);
     if (f->mapid == mapid) break;
   }
 
@@ -292,7 +289,6 @@ void munmap(mapid_t mapid)
     if (vme->is_loaded && pagedir_is_dirty(thread_current()->pagedir, vme->vaddr))
     {
       if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) NOT_REACHED();
-      free_page_vaddr(vme->vaddr);
     }
     vme->is_loaded = false;
     e = list_remove(e);
@@ -306,8 +302,7 @@ static void
 syscall_handler(struct intr_frame *f)
 {
   int argv[3];
-  if (!check_address(f->esp))
-    exit(-1);
+  if (!check_address(f->esp, f->esp)) exit(-1);
 
   switch (*(uint32_t *)(f->esp))
   {
@@ -320,7 +315,7 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_EXEC:
     get_argument(f->esp + 4, &argv[0], 1);
-    check_valid_string((void *)argv[0]);
+    check_valid_string((void *)argv[0], f->esp);
     f->eax = exec((const char *)argv[0]);
     break;
   case SYS_WAIT:
@@ -337,7 +332,7 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_OPEN:
     get_argument(f->esp + 4, &argv[0], 1);
-    check_valid_string((void *)argv[0]);
+    check_valid_string((void *)argv[0], f->esp);
     f->eax = open((const char *)argv[0]);
     break;
   case SYS_FILESIZE:
@@ -375,6 +370,6 @@ syscall_handler(struct intr_frame *f)
     munmap(argv[0]);
     break;
   default:
-    exit(-1);
+    thread_exit();
   }
 }

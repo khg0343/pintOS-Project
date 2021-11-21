@@ -619,6 +619,43 @@ setup_stack (void **esp)
   return success;
 }
 
+bool
+verify_stack(void *sp) {
+
+}
+
+bool
+expand_stack(void* addr){
+  
+  // struct page *kpage;
+  // uint8_t *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
+
+  // kpage = alloc_page(PAL_USER| PAL_ZERO);
+	// if(!kpage) return false;
+
+  // /* vm_entry 생성 */
+  // struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
+  // if (vme == NULL)  return false;
+
+  // /* vm_entry 멤버들 설정 */
+  // memset (vme, 0, sizeof (struct vm_entry));
+  // vme->type = VM_ANON;
+  // vme->vaddr = upage;
+  // vme->writable = true;
+  // vme->is_loaded = true;
+
+  // kpage->vme = vme;
+
+	// if(!insert_vme(&thread_current()->vm, vme))
+	// {
+	// 	free_page(kpage);
+	// 	free(vme);
+	// 	return false;
+	// }
+
+}
+
+
 /* Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.
    If WRITABLE is true, the user process may modify the page;

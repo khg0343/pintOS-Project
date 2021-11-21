@@ -5,9 +5,9 @@
 typedef int pid_t;
 typedef int mapid_t;
 
-struct vm_entry *check_address(void *addr);
+struct vm_entry *check_address(void *addr, void* esp);
 void check_valid_buffer(void *buffer, unsigned size, void *esp, bool to_write);
-void check_valid_string(const void *str);
+void check_valid_string(const void* str, void* esp);
 
 // bool check_address (void *addr);
 void get_argument(void *esp, int *arg, int count);

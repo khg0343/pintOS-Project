@@ -18,6 +18,9 @@ int process_add_file (struct file *f);
 struct file *process_get_file(int fd);
 void process_close_file(int fd);
 
+bool verify_stack (void *sp);
+bool expand_stack(void* addr);
+
 bool handle_mm_fault(struct vm_entry *vme);
 
 #endif /* userprog/process.h */

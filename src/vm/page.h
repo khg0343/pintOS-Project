@@ -17,6 +17,9 @@ bool insert_vme(struct hash *vm, struct vm_entry *vme); /* hash table에 vm_entr
 bool delete_vme(struct hash *vm, struct vm_entry *vme); /* 해시 테이블에서 vm_entry삭제 */
 bool load_file(void *kaddr, struct vm_entry *vme);
 
+struct page* alloc_page(enum palloc_flags flags);
+void free_page(void *kaddr);
+
 struct vm_entry{
     uint8_t type; /* VM_BIN, VM_FILE, VM_ANON의 타입 */
     void *vaddr; /* virtual page number */
@@ -44,5 +47,14 @@ struct mmap_file {
     struct list_elem elem;
     struct list vme_list;
 };
+
+struct page {
+    void *kaddr;
+    struct vm_entry *vme;
+    struct thread *thread;
+    struct list_elem lru;
+};
+
+
 
 #endif
