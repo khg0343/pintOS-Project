@@ -225,7 +225,7 @@ process_exit (void)
   
   palloc_free_page(cur->fd_table); /* file descriptor 테이블 메모리 해제 */
   
-  for (i = 1; i < cur->mmap_nxt; i++) munmap(i);
+  // for (i = 1; i < cur->mmap_nxt; i++) munmap(i);
 
   vm_destroy(&cur->vm);
 
@@ -557,7 +557,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
       /* vm_entry 생성 (malloc 사용) */
       struct vm_entry *vme = (struct vm_entry *)malloc(sizeof (struct vm_entry));
-      if (vme == NULL) return false;
+      if (!vme) return false;
 
       /* vm_entry 멤버들 설정, 가상페이지가 요구될 때 읽어야할 파일의 오프셋과 사이즈, 마지막에 패딩할 제로 바이트 등등 */
       memset (vme, 0, sizeof (struct vm_entry));
@@ -592,19 +592,19 @@ setup_stack (void **esp)
   bool success = false;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
-  {
+  if (kpage != NULL) {
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
     if (success)
       *esp = PHYS_BASE;
-    else
+    else{
       palloc_free_page (kpage);
       return success;
-  }
+    }
+  } else return success;
 
   /* vm_entry 생성 */
   struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
-  if (vme == NULL)  return false;
+  if (!vme)  return false;
 
   /* vm_entry 멤버들 설정 */
   memset (vme, 0, sizeof (struct vm_entry));
@@ -735,38 +735,37 @@ bool handle_mm_fault(struct vm_entry *vme)
 {
   bool success = false;
   
-  void* kaddr = palloc_get_page(PAL_USER | PAL_ZERO); /* palloc_get_page()를 이용해서 물리메모리 할당 */
-  if (kaddr == NULL) { //execption handling.
-		palloc_free_page(kaddr);
-		return false;
-	}
+  void* kaddr = palloc_get_page(PAL_USER); /* palloc_get_page()를 이용해서 물리메모리 할당 */
+  if (kaddr != NULL) { //execption handling.
+		
+    switch(vme->type)                
+    {
+      case VM_BIN: /* VM_BIN일 경우 load_file()함수를 이용해서 물리메모리에 로드 */
+        success = load_file(kaddr, vme);
+        break;
+      case VM_FILE:
+        success = load_file(kaddr, vme);
+        break;
+      case VM_ANON:
+        break;
+      default:
+        break;
+    }
+    
+    if (!success) {
+          palloc_free_page(kaddr);
+          return false;
+    }
 
-  switch(vme->type)                
-	{
-		case VM_BIN: /* VM_BIN일 경우 load_file()함수를 이용해서 물리메모리에 로드 */
-      success = load_file(kaddr, vme);
-      break;
-		case VM_FILE:
-      success = load_file(kaddr, vme);
-      break;
-		case VM_ANON:
-      break;
-		default:
-      break;
-	}
-  
-  if (!success) {
-        palloc_free_page(kaddr);
-        return false;
-  }
+    /* install_page를 이용해서 물리페이지와 가상페이지 맵핑 */
+    if (!install_page(vme->vaddr, kaddr, vme->writable)) {
+      palloc_free_page(kaddr);
+      return false;
+    }
 
-  /* install_page를 이용해서 물리페이지와 가상페이지 맵핑 */
-  if (!install_page(vme->vaddr, kaddr, vme->writable)) {
-		palloc_free_page(kaddr);
-		return false;
-	}
+    /* 로드 성공 여부 반환 */ 
+    vme->is_loaded = true;
+    return true;
 
-  /* 로드 성공 여부 반환 */ 
-  vme->is_loaded = true;
-	return true;
+	} else return false;
 }

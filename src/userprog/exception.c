@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "userprog/gdt.h"
 #include "userprog/syscall.h"
+#include "userprog/process.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -151,13 +152,12 @@ page_fault (struct intr_frame *f)
    user = (f->error_code & PF_U) != 0;
 
    if(!not_present) exit(-1);
+   
    struct vm_entry *vme = find_vme (fault_addr);
-   // if(!vme) {
-   //    if (!verify_stack ((int32_t) fault_addr, f->esp)) exit (-1);
-   //    expand_stack (fault_addr);
-   //    return;
-   // }
-   if (!handle_mm_fault(vme)) exit(-1);
+   if(!vme) exit(-1);
+   if (!handle_mm_fault(vme)) {
+      exit(-1);
+   }
   
 //   if (!user || is_kernel_vaddr(fault_addr) || not_present ) exit(-1);
 

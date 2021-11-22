@@ -23,8 +23,8 @@ void vm_destroy(struct hash *vm)   /* hash table 제거 */
 
 struct vm_entry *find_vme(void *vaddr) /* 현재 프로세스의 주소공간에서 vaddr에 해당하는 vm_entry를 검색 */
 {
-    struct hash *vm = &thread_current()->vm;
     struct vm_entry vme;
+    struct hash *vm = &thread_current()->vm;
     struct hash_elem *elem;
 
     vme.vaddr = pg_round_down(vaddr); /* pg_round_down()으로 vaddr의 페이지 번호를 구함 */
@@ -45,7 +45,7 @@ bool delete_vme(struct hash *vm, struct vm_entry *vme) /* hash table에서 vm_en
     else {
         // free_page_vaddr(vme->vaddr);
         // swap_clear(vme->swap_slot);
-        free(vme);
+        // free(vme);
         return true;
     }
 }
@@ -77,24 +77,6 @@ vm_destroy_func(struct hash_elem *e, void *aux UNUSED)
 
 bool load_file(void *kaddr, struct vm_entry *vme)
 {
-    /* Using file_read() + file_seek() */
-    /* 오프셋을 vm_entry에 해당하는 오프셋으로 설정(file_seek()) */
-    /* file_read로 물리페이지에 read_bytes만큼 데이터를 씀*/
-    /* zero_bytes만큼 남는 부분을 ‘0’으로 패딩 */
-    /* file_read 여부 반환 */
-
-    // ASSERT(kaddr != NULL);
-    // ASSERT(vme != NULL);
-    // ASSERT(vme->type == VM_BIN || vme->type == VM_FILE);
-
-    // if(file_read_at(vme->file, kaddr, vme->read_bytes, vme->offset) !=(int) vme->read_bytes)
-    //     {
-    //     return false;
-    //     }
-
-    // memset(kaddr + vme->read_bytes, 0, vme->zero_bytes);
-    // return true;
-
     int read_byte = file_read_at(vme->file, kaddr, vme->read_bytes, vme->offset);
 
 	if (read_byte != (int) vme->read_bytes) return false;

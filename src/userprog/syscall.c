@@ -105,7 +105,7 @@ int wait(pid_t pid)
 bool create(const char *file, unsigned initial_size)
 {
   if (file == NULL)
-    exit(-1);
+   exit(-1);
   return filesys_create(file, initial_size);
 }
 
@@ -121,7 +121,7 @@ int open(const char *file)
 
   if (file == NULL)
     exit(-1);
-
+    
   lock_acquire(&lock_file);
   f = filesys_open(file); /* 파일을 open */
   if (strcmp(thread_current()->name, file) == 0)
@@ -264,8 +264,8 @@ mmap(int fd, void *addr)
     insert_vme(&thread_current()->vm, vme);
 
     addr += PGSIZE;
-    offset += PGSIZE;
-    file_len -= PGSIZE;
+    offset += page_read_bytes;
+    file_len -= page_read_bytes;
   }
 
   return mfe->mapid;
@@ -370,6 +370,6 @@ syscall_handler(struct intr_frame *f)
     munmap(argv[0]);
     break;
   default:
-    thread_exit();
+    exit(-1);
   }
 }
