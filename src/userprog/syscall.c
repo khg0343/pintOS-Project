@@ -48,12 +48,6 @@ void check_valid_string(const void* str, void* esp)
 
 }
 
-// bool check_address(void *addr)
-// {
-//   if(is_user_vaddr(addr)) return true;
-//   else return false;
-// }
-
 void get_argument(void *esp, int *arg, int count)
 {
   int i;
@@ -151,8 +145,6 @@ int read(int fd, void *buffer, unsigned size)
 {
   int read_size = 0;
   struct file *f;
-  // if (!check_address(buffer, buffer))
-  //   exit(-1);
 
   lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
@@ -226,15 +218,17 @@ void close(int fd)
 mapid_t
 mmap(int fd, void *addr)
 {
-  if (!is_user_vaddr(addr))
-    return -1;
+  if (pg_ofs (addr) != 0 || !addr) return -1;
+  if (!is_user_vaddr (addr)) return -1;
 
   struct mmap_file *mfe;
-  struct vm_entry *vme;
-  size_t offset = 0;
+  size_t ofs = 0;
 
   //mmap_file 생성 및 초기화
   mfe = (struct mmap_file *)malloc(sizeof(struct mmap_file));
+  if (!mfe) return -1;
+  
+  memset (mfe, 0, sizeof(struct mmap_file));
   mfe->mapid = thread_current()->mmap_nxt++;
   mfe->file = file_reopen(process_get_file(fd));
   list_init(&mfe->vme_list);
@@ -243,31 +237,30 @@ mmap(int fd, void *addr)
   //vm_entry 생성 및 초기화
   int file_len = file_length(mfe->file);
   while (file_len > 0)
-  {
-    vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
+    {
+      if (find_vme (addr)) return -1;
 
-    size_t page_read_bytes = file_len < PGSIZE ? file_len : PGSIZE;
-    size_t page_zero_bytes = PGSIZE - page_read_bytes;
+      size_t page_read_bytes = file_len < PGSIZE ? file_len : PGSIZE;
+      size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-    vme->type = VM_FILE;
-    vme->vaddr = addr;
+      struct vm_entry *vme = (struct vm_entry *)malloc(sizeof (struct vm_entry));
+      memset (vme, 0, sizeof (struct vm_entry));
+      vme->type = VM_FILE;
+      vme->vaddr = addr;
+      vme->writable = true;
+      vme->is_loaded = false;
 
-    vme->writable = true;
-    vme->is_loaded = false;
+      vme->file = mfe->file;
+      vme->offset = ofs;
+      vme->read_bytes = page_read_bytes;
+      vme->zero_bytes = page_zero_bytes;
 
-    vme->file = mfe->file;
-    vme->offset = offset;
-    vme->read_bytes = page_read_bytes;
-    vme->zero_bytes = page_zero_bytes;
-
-    list_push_back(&mfe->vme_list, &vme->mmap_elem);
-    insert_vme(&thread_current()->vm, vme);
-
-    addr += PGSIZE;
-    offset += page_read_bytes;
-    file_len -= page_read_bytes;
-  }
-
+      list_push_back(&mfe->vme_list, &vme->mmap_elem);
+      insert_vme(&thread_current()->vm, vme);
+      addr += PGSIZE;
+      ofs += PGSIZE;
+      file_len -= PGSIZE;
+    }
   return mfe->mapid;
 }
 

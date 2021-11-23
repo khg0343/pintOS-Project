@@ -225,7 +225,7 @@ process_exit (void)
   
   palloc_free_page(cur->fd_table); /* file descriptor 테이블 메모리 해제 */
   
-  // for (i = 1; i < cur->mmap_nxt; i++) munmap(i);
+  for (i = 1; i < cur->mmap_nxt; i++) munmap(i);
 
   vm_destroy(&cur->vm);
 

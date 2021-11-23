@@ -204,7 +204,7 @@ thread_create (const char *name, int priority,
     sema_init(&(t->sema_load), 0); /* load semaphore 0으로 초기화 */
     t->isExit = false; /* process가 종료되지 않음 */
     t->isLoad = false; /* 프로그램이 로드되지 않음 */
-    list_push_back(&(running_thread()->child_list), &(t->child_elem));/* child list에 추가 */
+    list_push_back(&(thread_current()->child_list), &(t->child_elem));/* child list에 추가 */
 
     t->fd_nxt = 2;/* fd 값 초기화(0,1은 표준 입력,출력) */
     t->fd_table = palloc_get_page(PAL_ZERO); /* File Descriptor 테이블에 메모리 할당 */

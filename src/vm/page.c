@@ -45,7 +45,7 @@ bool delete_vme(struct hash *vm, struct vm_entry *vme) /* hash table에서 vm_en
     else {
         // free_page_vaddr(vme->vaddr);
         // swap_clear(vme->swap_slot);
-        // free(vme);
+        free(vme);
         return true;
     }
 }
