@@ -17,8 +17,6 @@ struct lock lock_file;
 struct vm_entry *check_address(void *addr, void* esp)
 {
   if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
-  // if (!is_user_vaddr(addr))
-  //   exit(-1);
 
   return find_vme(addr);
 
@@ -282,6 +280,7 @@ void munmap(mapid_t mapid)
     if (vme->is_loaded && pagedir_is_dirty(thread_current()->pagedir, vme->vaddr))
     {
       if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) NOT_REACHED();
+      free_page (pagedir_get_page (thread_current ()->pagedir, vme->vaddr));
     }
     vme->is_loaded = false;
     e = list_remove(e);
