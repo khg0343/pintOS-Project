@@ -8,7 +8,7 @@ struct lock swap_lock;
 struct bitmap *swap_bitmap;
 struct block *swap_block;
 
-void swap_init(size_t used_index, void *kaddr)
+void swap_init(void)
 {
     swap_block = block_get_role(BLOCK_SWAP);
     if (!swap_block) return;
@@ -20,6 +20,7 @@ void swap_init(size_t used_index, void *kaddr)
 
     lock_init(&swap_lock);
 }
+
 void swap_in(size_t used_index, void *kaddr)
 {
     //used_index의 swap slot에 저장된 데이터를 논리 주소 kaddr로 복사
@@ -31,6 +32,7 @@ void swap_in(size_t used_index, void *kaddr)
 
     bitmap_flip(swap_bitmap, used_index);
 }
+
 size_t swap_out(void *kaddr)
 {
     //  kaddr 주소가 가리키는 페이지를 스왑 파티션에 기록

@@ -5,6 +5,7 @@
 #include "threads/thread.h"
 #include "threads/malloc.h"
 #include "filesys/file.h"
+#include "vm/frame.h"
 
 static unsigned vm_hash_func(const struct hash_elem *, void *UNUSED);
 static bool vm_less_func(const struct hash_elem *a, const struct hash_elem *b);
@@ -103,12 +104,15 @@ struct page *alloc_page(enum palloc_flags flags)
     page->thread = thread_current();
     page->kaddr = palloc_get_page(flags);
 
-    try_to_free_pages(flags);
+	page->kaddr = palloc_get_page(flags);
+	while(!page->kaddr) 
+        page->kaddr = try_to_free_pages(flags);
 
     add_page_to_lru_list(page);
 
     return page;
 }
+
 void free_page(void *kaddr)
 {
     struct page *page = find_page_in_lru_list(kaddr);

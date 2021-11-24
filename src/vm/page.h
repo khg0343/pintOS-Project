@@ -57,5 +57,6 @@ bool load_file(void *kaddr, struct vm_entry *vme);
 
 struct page *alloc_page(enum palloc_flags flags);
 void free_page(void *kaddr);
+void __free_page(struct page *page);
 
 #endif
