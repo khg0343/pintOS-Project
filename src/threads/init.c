@@ -29,10 +29,10 @@
 #include "userprog/syscall.h"
 #include "userprog/tss.h"
 #else
-#include "vm/swap.h"
-#include "vm/frame.h"
 #include "tests/threads/tests.h"
 #endif
+#include "vm/swap.h"
+#include "vm/frame.h"
 #ifdef FILESYS
 #include "devices/block.h"
 #include "devices/ide.h"
@@ -116,9 +116,8 @@ main (void)
   exception_init ();
   syscall_init ();
 #endif
-
-  swap_init ();
-  lru_list_init ();
+  swap_init(1024*8);
+  lru_list_init();
 
   /* Start thread scheduler and enable interrupts. */
   thread_start ();

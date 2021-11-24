@@ -10,6 +10,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 
 static void syscall_handler(struct intr_frame *);
 struct lock lock_file;
@@ -17,6 +18,8 @@ struct lock lock_file;
 struct vm_entry *check_address(void *addr, void* esp)
 {
   if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
+  // if (!is_user_vaddr(addr))
+  //   exit(-1);
 
   return find_vme(addr);
 
@@ -279,8 +282,10 @@ void munmap(mapid_t mapid)
     struct vm_entry *vme = list_entry(e, struct vm_entry, mmap_elem);
     if (vme->is_loaded && pagedir_is_dirty(thread_current()->pagedir, vme->vaddr))
     {
-      if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) NOT_REACHED();
-      free_page (pagedir_get_page (thread_current ()->pagedir, vme->vaddr));
+      if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) 
+        NOT_REACHED();
+      free_page_VM(vme->vaddr);
+
     }
     vme->is_loaded = false;
     e = list_remove(e);
@@ -316,10 +321,12 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_CREATE:
     get_argument(f->esp + 4, &argv[0], 2);
+    check_valid_string((void *)argv[0], f->esp);
     f->eax = create((const char *)argv[0], (unsigned)argv[1]);
     break;
   case SYS_REMOVE:
     get_argument(f->esp + 4, &argv[0], 1);
+    check_valid_string((void *)argv[0], f->esp);
     f->eax = remove((const char *)argv[0]);
     break;
   case SYS_OPEN:

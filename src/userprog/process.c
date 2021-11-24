@@ -226,6 +226,7 @@ process_exit (void)
   palloc_free_page(cur->fd_table); /* file descriptor 테이블 메모리 해제 */
   
   for (i = 1; i < cur->mmap_nxt; i++) munmap(i);
+  file_close(cur->file_run);
 
   vm_destroy(&cur->vm);
 
@@ -587,48 +588,79 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp) 
 {
-  struct page* kpage;
+  struct page *kpage;
+  uint8_t *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
   bool success = false;
-
+  struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
+  if (!vme)  
+    return false;
   kpage = alloc_page(PAL_USER | PAL_ZERO);
-  if (kpage != NULL) {
-    success = install_page(((uint8_t *) PHYS_BASE) - PGSIZE, kpage->kaddr, true);
+  if (kpage!= NULL) {
+    kpage->vme = vme;
+    add_page_to_lru_list(kpage);
+    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage->kaddr, true);
     if (success)
+    {
       *esp = PHYS_BASE;
-    else{
-      // palloc_free_page (kpage);
-      free_page (kpage);
-      return success;
+      memset (vme, 0, sizeof (struct vm_entry));
+      vme->type = VM_ANON;
+      vme->vaddr = upage;
+      vme->is_loaded = true;
+      vme->writable = true;
+      insert_vme (&thread_current ()->vm, vme);
+      return true;
     }
-  } else return success;
-
+    else{
+      free_page_PM (kpage);
+      free(vme);
+      return false;
+    }
+  } 
   /* vm_entry 생성 */
-  kpage->vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
-  if (!kpage->vme)  return false;
+  
 
   /* vm_entry 멤버들 설정 */
-  memset (kpage->vme, 0, sizeof (struct vm_entry));
-  kpage->vme->type = VM_ANON;
-  kpage->vme->vaddr = ((uint8_t *) PHYS_BASE) - PGSIZE;
-  kpage->vme->is_loaded = true;
-  kpage->vme->writable = true;
+  
 
   /* insert_vme() 함수로 hash table에 추가 */
-  insert_vme (&thread_current ()->vm, kpage->vme);
+}
+
+bool
+verify_stack(void *sp) {
+
+}
+
+bool
+expand_stack(void* addr){
   
-  return success;
+  // struct page *kpage;
+  // uint8_t *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
+
+  // kpage = alloc_page(PAL_USER| PAL_ZERO);
+	// if(!kpage) return false;
+
+  // /* vm_entry 생성 */
+  // struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
+  // if (vme == NULL)  return false;
+
+  // /* vm_entry 멤버들 설정 */
+  // memset (vme, 0, sizeof (struct vm_entry));
+  // vme->type = VM_ANON;
+  // vme->vaddr = upage;
+  // vme->writable = true;
+  // vme->is_loaded = true;
+
+  // kpage->vme = vme;
+
+	// if(!insert_vme(&thread_current()->vm, vme))
+	// {
+	// 	free_page(kpage);
+	// 	free(vme);
+	// 	return false;
+	// }
+
 }
 
-bool
-verify_stack(void *sp)
-{
-
-}
-
-bool
-expand_stack(void* addr)
-{
-}
 
 /* Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.
@@ -709,9 +741,11 @@ bool handle_mm_fault(struct vm_entry *vme)
 {
   bool success = false;
   
-  // void* kaddr = palloc_get_page(PAL_USER); /* palloc_get_page()를 이용해서 물리메모리 할당 */
-  struct page* kpage = alloc_page(PAL_USER);
-  if (kpage != NULL) { //execption handling.
+  //void* kaddr = palloc_get_page(PAL_USER); /* palloc_get_page()를 이용해서 물리메모리 할당 */
+  struct page *kpage;
+  kpage = alloc_page(PAL_USER);
+  kpage->vme=vme;
+  if (kpage->kaddr != NULL) { //execption handling.
 		
     switch(vme->type)                
     {
@@ -720,24 +754,26 @@ bool handle_mm_fault(struct vm_entry *vme)
         break;
       case VM_FILE:
         success = load_file(kpage->kaddr, vme);
+        vme->is_loaded = true;
+        add_page_to_lru_list(kpage);
         break;
       case VM_ANON:
-        swap_in (vme->swap_slot, kpage->kaddr);
+        swap_in(vme->swap_slot,kpage->kaddr);
+        vme->is_loaded = true;
+        add_page_to_lru_list(kpage);
         break;
       default:
         break;
     }
     
     if (!success) {
-          // palloc_free_page(kaddr);
-          free_page(kpage);
+          free_page_PM(kpage->kaddr);
           return false;
     }
 
     /* install_page를 이용해서 물리페이지와 가상페이지 맵핑 */
     if (!install_page(vme->vaddr, kpage->kaddr, vme->writable)) {
-      // palloc_free_page(kaddr);
-      free_page(kpage);
+      free_page_PM(kpage->kaddr);
       return false;
     }
 
