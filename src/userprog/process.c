@@ -21,6 +21,7 @@
 #include "threads/vaddr.h"
 #include "vm/page.h"
 #include "vm/swap.h"
+#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -586,43 +587,44 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack(void **esp)
 {
   struct page *kpage;
-  uint8_t *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
   bool success = false;
-  struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
-  if (!vme)  
-    return false;
+
   kpage = alloc_page(PAL_USER | PAL_ZERO);
-  if (kpage!= NULL) {
-    kpage->vme = vme;
-    add_page_to_lru_list(kpage);
-    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage->kaddr, true);
+  if (kpage != NULL)
+  {
+    success = install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage->kaddr, true);
     if (success)
-    {
       *esp = PHYS_BASE;
-      memset (vme, 0, sizeof (struct vm_entry));
-      vme->type = VM_ANON;
-      vme->vaddr = upage;
-      vme->is_loaded = true;
-      vme->writable = true;
-      insert_vme (&thread_current ()->vm, vme);
-      return true;
+    else
+    {
+      free_page(kpage);
+      return success;
     }
-    else{
-      free_page_PM (kpage);
-      free(vme);
-      return false;
-    }
-  } 
+  }
+  else
+    return success;
+
   /* vm_entry 생성 */
-  
+  kpage->vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
+  if (!kpage->vme)
+    return false;
+
+  add_page_to_lru_list (kpage);
 
   /* vm_entry 멤버들 설정 */
-  
+  memset(kpage->vme, 0, sizeof(struct vm_entry));
+  kpage->vme->type = VM_ANON;
+  kpage->vme->vaddr = ((uint8_t *)PHYS_BASE) - PGSIZE;
+  kpage->vme->is_loaded = true;
+  kpage->vme->writable = true;
 
   /* insert_vme() 함수로 hash table에 추가 */
+  insert_vme(&thread_current()->vm, kpage->vme);
+
+  return success;
 }
 
 bool verify_stack(uint32_t addr, void *esp)
@@ -649,11 +651,10 @@ bool expand_stack(void *addr)
   kpage = alloc_page(PAL_USER | PAL_ZERO);
   if (kpage != NULL)
   {
-    add_page_to_lru_list(kpage);
     success = install_page(upage, kpage->kaddr, true);
     if (!success)
     {
-      free_page_PM(kpage);
+      free_page(kpage);
       return success;
     }
   }
@@ -664,6 +665,8 @@ bool expand_stack(void *addr)
   kpage->vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
   if (!kpage->vme)
     return false;
+
+  add_page_to_lru_list (kpage);
 
   /* vm_entry 멤버들 설정 */
   memset(kpage->vme, 0, sizeof(struct vm_entry));
@@ -771,30 +774,31 @@ bool handle_mm_fault(struct vm_entry *vme)
       case VM_FILE:
         success = load_file(kpage->kaddr, vme);
         vme->is_loaded = true;
-        add_page_to_lru_list(kpage);
+        // add_page_to_lru_list(kpage);
         break;
       case VM_ANON:
         swap_in(vme->swap_slot,kpage->kaddr);
         vme->is_loaded = true;
-        add_page_to_lru_list(kpage);
+        // add_page_to_lru_list(kpage);
         break;
       default:
         break;
     }
     
     if (!success) {
-          free_page_PM(kpage->kaddr);
+          free_page(kpage->kaddr);
           return false;
     }
 
     /* install_page를 이용해서 물리페이지와 가상페이지 맵핑 */
     if (!install_page(vme->vaddr, kpage->kaddr, vme->writable)) {
-      free_page_PM(kpage->kaddr);
+      free_page(kpage->kaddr);
       return false;
     }
 
     /* 로드 성공 여부 반환 */ 
     vme->is_loaded = true;
+    add_page_to_lru_list(kpage);
     return true;
 
 	} else return false;

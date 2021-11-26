@@ -11,7 +11,7 @@
 #include "filesys/off_t.h"
 extern struct lock lru_lock;
 
-struct vm_entry{
+struct vm_entry {
     uint8_t type; /* VM_BIN, VM_FILE, VM_ANON의 타입 */
     void *vaddr; /* virtual page number */
     bool writable; /* 해당 주소에 write 가능 여부 */
@@ -23,12 +23,8 @@ struct vm_entry{
     size_t zero_bytes; /* 0으로 채울 남은 페이지의 byte 수 */
 
     struct hash_elem elem; /* Hash Table Element */
-
-    /* Memory Mapped File 에서 다룰 예정 */
     struct list_elem mmap_elem; /* mmap 리스트 element */
-
-    /* Swapping 과제에서 다룰 예정 */
-    size_t swap_slot; /* 스왑 슬롯 */
+    size_t swap_slot;
 };
 
 struct mmap_file {
@@ -53,8 +49,8 @@ bool insert_vme(struct hash *vm, struct vm_entry *vme); /* hash table에 vm_entr
 bool delete_vme(struct hash *vm, struct vm_entry *vme); /* 해시 테이블에서 vm_entry삭제 */
 bool load_file(void *kaddr, struct vm_entry *vme);
 
+void try_to_free_pages();
 struct page* alloc_page(enum palloc_flags flags);
-void free_page_PM(void *kaddr);
-void free_page_VM(void *vaddr);
+void free_page(void *kaddr);
 
 #endif

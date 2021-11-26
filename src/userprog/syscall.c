@@ -284,8 +284,7 @@ void munmap(mapid_t mapid)
     {
       if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) 
         NOT_REACHED();
-      free_page_VM(vme->vaddr);
-
+      free_page(pagedir_get_page(thread_current()->pagedir,vme->vaddr));
     }
     vme->is_loaded = false;
     e = list_remove(e);
