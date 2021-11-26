@@ -26,12 +26,20 @@ struct vm_entry *find_vme(void *vaddr) /* 현재 프로세스의 주소공간에
     struct vm_entry vme;
     struct hash *vm = &thread_current()->vm;
     struct hash_elem *elem;
-
+    //printf("before\n");
     vme.vaddr = pg_round_down(vaddr);
+    //printf("after\n");
     if ((elem = hash_find(vm, &vme.elem)))
-        return hash_entry(elem, struct vm_entry, elem); /* hash_entry()로 해당 hash_elem의 vm_entry return */
+    {
+        //printf("find\n");
+        return hash_entry(elem, struct vm_entry, elem);
+        
+    } /* hash_entry()로 해당 hash_elem의 vm_entry return */
     else
+    {
+        //printf("not find\n");
         return NULL; /* 만약 존재하지 않는다면 NULL 리턴 */
+    }
 }
 
 bool insert_vme(struct hash *vm, struct vm_entry *vme) /* hash table에 vm_entry 삽입 */
@@ -93,11 +101,12 @@ bool load_file(void *kaddr, struct vm_entry *vme)
 
 void try_to_free_pages()
 {
+    //printf("%d %s\n",lock_held_by_current_thread(&lru_lock),thread_current()->name);
     lock_acquire(&lru_lock);
 
     struct page *page = is_victim();
     bool dirty = pagedir_is_dirty(page->thread->pagedir, page->vme->vaddr);
-
+    /*
     if (page->vme->type == VM_FILE && dirty)
     {
         // lock_acquire(&lock_file);
@@ -107,9 +116,44 @@ void try_to_free_pages()
     else
     {
         if (page->vme->type == VM_BIN && !dirty)
+        {
+            page->vme->is_loaded = false;
+            pagedir_clear_page(page->thread->pagedir, page->vme->vaddr);
+            del_page_from_lru_list(page);
+            palloc_free_page(page->kaddr);
+            free(page);
+            lock_release(&lru_lock);
             return;
-        page->vme->swap_slot = swap_out(page->kaddr);
-        page->vme->type = VM_ANON;
+        }
+        else
+        {
+                page->vme->swap_slot = swap_out(page->kaddr);
+                page->vme->type = VM_ANON;
+        }
+    }
+    if(page->vme->type == VM_ANON)
+        page->vme->swap_slot = swap_out(page->kaddr);*/
+    switch(page->vme->type)
+    {
+        case VM_BIN:
+            if(dirty)
+            {
+                page->vme->swap_slot = swap_out(page->kaddr);
+                page->vme->type = VM_ANON;
+            }
+            break;
+        case VM_FILE:
+            if(dirty)
+            {
+                if(file_write_at(page->vme->file,page->vme->vaddr,page->vme->read_bytes,page->vme->offset)!=(int)page->vme->read_bytes)
+                    NOT_REACHED();
+            }
+            break;
+        case VM_ANON:
+            page->vme->swap_slot = swap_out(page->kaddr);
+            break;
+        default:
+            NOT_REACHED();
     }
 
     page->vme->is_loaded = false;
@@ -133,9 +177,11 @@ struct page *alloc_page(enum palloc_flags flags)
     while (!page->kaddr)
     {
         try_to_free_pages();
+        //printf("here1\n");
         page->kaddr = palloc_get_page(flags);
+        //printf("here2\n");
     }
-
+    
     return page;
 }
 //extern struct list lru_list; /*frame.c에 있는 global variable for gcc problem*/

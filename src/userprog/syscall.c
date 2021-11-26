@@ -14,13 +14,30 @@
 
 static void syscall_handler(struct intr_frame *);
 struct lock lock_file;
+static void valid_Address(void *addr, void *esp)
+{
+  if(!(is_user_vaddr(addr) && addr>=(void*)0x08048000UL))
+      exit(-1);
+  if(!find_vme(addr))
+  {
+    if(!verify_stack((int32_t) addr, (int32_t)esp))
+      exit(-1);
+    expand_stack(addr);
+  }
+}
+static void checkString(char *str, unsigned size, void *esp)
+{
+  while(size--)
+    valid_Address((void*)str++,esp);
+}
 
+/************************************************************************************************/
 struct vm_entry *check_address(void *addr, void* esp)
 {
   if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
   // if (!is_user_vaddr(addr))
   //   exit(-1);
-
+  //printf("here ca\n");
   return find_vme(addr);
 
   /*addr이 vm_entry에 존재하면 vm_entry를 반환하도록 코드 작성 */
@@ -30,11 +47,25 @@ struct vm_entry *check_address(void *addr, void* esp)
 void check_valid_buffer (void *buffer, unsigned size, void *esp, bool to_write)
 {
   int i;
+  //printf("enter");
   for (i = 0; i < size; i++)
   {
     struct vm_entry *vme = check_address(buffer + i, esp);
-    if (!vme) exit(-1);
-    if (to_write && !vme->writable) exit(-1);
+    if (!vme) //exit(-1);
+    {
+      if(!verify_stack((int32_t)buffer+i,(int32_t)esp))
+      {
+        
+        exit(-1);
+      }
+      expand_stack(buffer+i);
+    }
+    //printf("vme pass\n");
+    if (to_write && !vme->writable) 
+    {
+      //printf("EXIT\n");
+      exit(-1);
+    }
   }
   /* 인자로 받은 buffer부터 buffer + size까지의 크기가 한 페이지의 크기를 넘을 수도 있음 */
   /* check_address를 이용해서 주소의 유저영역 여부를 검사함과 동시에 vm_entry 구조체를 얻음 */
@@ -297,6 +328,7 @@ void munmap(mapid_t mapid)
 static void
 syscall_handler(struct intr_frame *f)
 {
+  
   int argv[3];
   if (!check_address(f->esp, f->esp)) exit(-1);
 
@@ -339,12 +371,17 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_READ:
     get_argument(f->esp + 4, &argv[0], 3);
-    check_valid_buffer((void *)argv[1], (unsigned)argv[2], f->esp, true); //Changed
+    //printf("here1\n");
+    //check_valid_buffer((void *)argv[1], (unsigned)argv[2], f->esp, false); //Changed
+    checkString((char*)argv[1],(unsigned)argv[2],f->esp);
+    //printf("here2\n"); //Changed
     f->eax = read((int)argv[0], (void *)argv[1], (unsigned)argv[2]);
+    //printf("here3\n");
     break;
   case SYS_WRITE:
     get_argument(f->esp + 4, &argv[0], 3);
-    check_valid_buffer((void *)argv[1], (unsigned)argv[2], f->esp, false); //Changed
+    //check_valid_buffer((void *)argv[1], (unsigned)argv[2], f->esp, false); //Changed
+    checkString((char*)argv[1],(unsigned)argv[2],f->esp);
     f->eax = write((int)argv[0], (const void *)argv[1], (unsigned)argv[2]);
     break;
   case SYS_SEEK:
