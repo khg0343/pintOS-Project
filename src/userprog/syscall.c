@@ -14,79 +14,51 @@
 
 static void syscall_handler(struct intr_frame *);
 struct lock lock_file;
-static void valid_Address(void *addr, void *esp)
-{
-  if(!(is_user_vaddr(addr) && addr>=(void*)0x08048000UL))
-      exit(-1);
-  if(!find_vme(addr))
-  {
-    if(!verify_stack((int32_t) addr, (int32_t)esp))
-      exit(-1);
-    expand_stack(addr);
-  }
-}
-static void checkString(char *str, unsigned size, void *esp)
-{
-  while(size--)
-    valid_Address((void*)str++,esp);
-}
 
-/************************************************************************************************/
-struct vm_entry *check_address(void *addr, void* esp)
+static void valid_address(void *addr, void *esp)
 {
   if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
-  // if (!is_user_vaddr(addr))
-  //   exit(-1);
-  //printf("here ca\n");
-  return find_vme(addr);
-
-  /*addr이 vm_entry에 존재하면 vm_entry를 반환하도록 코드 작성 */
-  /*find_vme() 사용*/
-}
-
-void check_valid_buffer (void *buffer, unsigned size, void *esp, bool to_write)
-{
-  int i;
-  //printf("enter");
-  for (i = 0; i < size; i++)
+  if(!find_vme(addr))
   {
-    struct vm_entry *vme = check_address(buffer + i, esp);
-    if (!vme) //exit(-1);
-    {
-      if(!verify_stack((int32_t)buffer+i,(int32_t)esp))
-      {
-        
-        exit(-1);
-      }
-      expand_stack(buffer+i);
-    }
-    //printf("vme pass\n");
-    if (to_write && !vme->writable) 
-    {
-      //printf("EXIT\n");
-      exit(-1);
-    }
+    if(!verify_stack((int32_t) addr, (int32_t)esp)) exit(-1);
+    if(!expand_stack(addr)) exit(-1);
   }
-  /* 인자로 받은 buffer부터 buffer + size까지의 크기가 한 페이지의 크기를 넘을 수도 있음 */
-  /* check_address를 이용해서 주소의 유저영역 여부를 검사함과 동시에 vm_entry 구조체를 얻음 */
-  /* 해당 주소에 대한 vm_entry 존재여부와 vm_entry의 writable 멤버가 true인지 검사 */
-  /* 위 내용을 buffer 부터 buffer + size까지의 주소에 포함되는 vm_entry들에 대해 적용 */
 }
-
-void check_valid_string(const void* str, void* esp)
+static void check_string(char *str, unsigned size, void *esp)
 {
-  /* str에 대한 vm_entry의 존재 여부를 확인*/
-  if (check_address(str, esp) == NULL) exit(-1);
-
+  while(size--) valid_address((void*)str++,esp);
 }
+
+// static struct vm_entry *check_address(void *addr, void* esp)
+// {
+//   if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
+//   return find_vme(addr);
+// }
+
+// void check_valid_buffer (void *buffer, unsigned size, void *esp, bool to_write)
+// {
+//   int i;
+//   for (i = 0; i < size; i++)
+//   {
+//     struct vm_entry *vme = check_address(buffer + i, esp);
+//     if (!vme)
+//     {
+//       if(!verify_stack((int32_t)buffer+i,(int32_t)esp)) exit(-1);
+//       if(!expand_stack(buffer+i)) exit(-1);
+//     }
+//     if (to_write && !vme->writable) 
+//     {
+//       exit(-1);
+//     }
+//   }
+// }
 
 void get_argument(void *esp, int *arg, int count)
 {
   int i;
   for (i = 0; i < count; i++)
   {
-    if (!check_address(esp + 4 * i, esp))
-      exit(-1);
+    valid_address(esp + 4 * i, esp);
     arg[i] = *(int *)(esp + 4 * i);
   }
 }
@@ -145,13 +117,12 @@ int open(const char *file)
   int fd;
   struct file *f;
 
-  if (file == NULL)
-    exit(-1);
+  if (!file) exit(-1);
     
   lock_acquire(&lock_file);
   f = filesys_open(file); /* 파일을 open */
-  if (strcmp(thread_current()->name, file) == 0)
-    file_deny_write(f); /*ROX TEST*/
+
+  if (!strcmp(thread_current()->name, file)) file_deny_write(f); /*ROX TEST*/
 
   if (f != NULL)
   {
@@ -180,8 +151,8 @@ int read(int fd, void *buffer, unsigned size)
 
   lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
-  if (fd == 0)
-  { /* file descriptor가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
+  if (fd == 0) /* file descriptor가 0일 경우(STDIN) 키보드에 입력을 버퍼에 저장 후 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
+  { 
     unsigned int i;
     for (i = 0; i < size; i++)
     {
@@ -190,10 +161,10 @@ int read(int fd, void *buffer, unsigned size)
     }
     read_size = i;
   }
-  else
+  else /* file descriptor가 0이 아닐 경우 파일의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
   {
     if ((f = process_get_file(fd)))
-      read_size = file_read(f, buffer, size); /* file descriptor가 0이 아닐 경우 파일의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
+      read_size = file_read(f, buffer, size); 
   }
 
   lock_release(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
@@ -208,13 +179,13 @@ int write(int fd, const void *buffer, unsigned size)
 
   lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
-  if (fd == 1)
-  { /* file descriptor가 1일 경우(STDOUT) 버퍼에 저장된 값을 화면에 출력후 버퍼의 크기 리턴 (putbuf() 이용) */
+  if (fd == 1) /* file descriptor가 1일 경우(STDOUT) 버퍼에 저장된 값을 화면에 출력후 버퍼의 크기 리턴 (putbuf() 이용) */
+  { 
     putbuf(buffer, size);
     write_size = size;
   }
-  else
-  { /* file descriptor가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 파일에 기록후 기록한 바이트 수를 리턴 */
+  else /* file descriptor가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 파일에 기록후 기록한 바이트 수를 리턴 */
+  { 
     if ((f = process_get_file(fd)))
       write_size = file_write(f, (const void *)buffer, size);
   }
@@ -313,8 +284,7 @@ void munmap(mapid_t mapid)
     struct vm_entry *vme = list_entry(e, struct vm_entry, mmap_elem);
     if (vme->is_loaded && pagedir_is_dirty(thread_current()->pagedir, vme->vaddr))
     {
-      if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) 
-        NOT_REACHED();
+      if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) NOT_REACHED();
       free_page(pagedir_get_page(thread_current()->pagedir,vme->vaddr));
     }
     vme->is_loaded = false;
@@ -329,8 +299,8 @@ static void
 syscall_handler(struct intr_frame *f)
 {
   
-  int argv[3];
-  if (!check_address(f->esp, f->esp)) exit(-1);
+  int argv[4];
+  valid_address(f->esp, f->esp);
 
   switch (*(uint32_t *)(f->esp))
   {
@@ -343,7 +313,7 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_EXEC:
     get_argument(f->esp + 4, &argv[0], 1);
-    check_valid_string((void *)argv[0], f->esp);
+    valid_address((void *)argv[0], f->esp);
     f->eax = exec((const char *)argv[0]);
     break;
   case SYS_WAIT:
@@ -352,17 +322,17 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_CREATE:
     get_argument(f->esp + 4, &argv[0], 2);
-    check_valid_string((void *)argv[0], f->esp);
+    valid_address((void *)argv[0], f->esp);
     f->eax = create((const char *)argv[0], (unsigned)argv[1]);
     break;
   case SYS_REMOVE:
     get_argument(f->esp + 4, &argv[0], 1);
-    check_valid_string((void *)argv[0], f->esp);
+    valid_address((void *)argv[0], f->esp);
     f->eax = remove((const char *)argv[0]);
     break;
   case SYS_OPEN:
     get_argument(f->esp + 4, &argv[0], 1);
-    check_valid_string((void *)argv[0], f->esp);
+    valid_address((void *)argv[0], f->esp);
     f->eax = open((const char *)argv[0]);
     break;
   case SYS_FILESIZE:
@@ -373,15 +343,13 @@ syscall_handler(struct intr_frame *f)
     get_argument(f->esp + 4, &argv[0], 3);
     //printf("here1\n");
     //check_valid_buffer((void *)argv[1], (unsigned)argv[2], f->esp, false); //Changed
-    checkString((char*)argv[1],(unsigned)argv[2],f->esp);
-    //printf("here2\n"); //Changed
+    check_string((char*)argv[1],(unsigned)argv[2],f->esp);
     f->eax = read((int)argv[0], (void *)argv[1], (unsigned)argv[2]);
-    //printf("here3\n");
     break;
   case SYS_WRITE:
     get_argument(f->esp + 4, &argv[0], 3);
     //check_valid_buffer((void *)argv[1], (unsigned)argv[2], f->esp, false); //Changed
-    checkString((char*)argv[1],(unsigned)argv[2],f->esp);
+    check_string((char*)argv[1],(unsigned)argv[2],f->esp);
     f->eax = write((int)argv[0], (const void *)argv[1], (unsigned)argv[2]);
     break;
   case SYS_SEEK:

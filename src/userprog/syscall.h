@@ -5,11 +5,11 @@
 typedef int pid_t;
 typedef int mapid_t;
 
-struct vm_entry *check_address(void *addr, void* esp);
-void check_valid_buffer(void *buffer, unsigned size, void *esp, bool to_write);
-void check_valid_string(const void* str, void* esp);
+// void valid_address(void *addr, void *esp);
+// void check_string(char *str, unsigned size, void *esp);
+// struct vm_entry *check_address(void *addr, void* esp);
+// void check_valid_buffer (void *buffer, unsigned size, void *esp, bool to_write);
 
-// bool check_address (void *addr);
 void get_argument(void *esp, int *arg, int count);
 
 void syscall_init (void);
