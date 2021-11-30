@@ -197,19 +197,11 @@ process_wait (tid_t child_tid)
   int status;
   struct list_elem *e;
   if (!(child = get_child_process(child_tid))) return -1;
-  for(e = list_begin(&parent->child_list);e!=list_end(&parent->child_list);e=list_next(e))
-  {
-    child = list_entry(e,struct thread, child_elem);
-    if(child_tid == child->tid)
-    {
-      sema_down(&child->sema_exit);
-      status = child->exit_status;
-      remove_child_process(child);
+  sema_down(&child->sema_exit);
+  status = child->exit_status;
+  remove_child_process(child);
 
-      return status;
-    }
-  }
-  return -1;
+  return status;
 }
 
 
@@ -222,8 +214,7 @@ process_exit (void)
 
   int i;
   for(i = 2; i < cur->fd_nxt; i++) process_close_file(i);/* file descriptor 테이블의 최대값을 이용해 file descriptor의 최소값인 2가 될 때까지 파일을 닫음 */
-	  
-  
+	
   palloc_free_page(cur->fd_table); /* file descriptor 테이블 메모리 해제 */
   
   for (i = 1; i < cur->mmap_nxt; i++) munmap(i);

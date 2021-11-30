@@ -26,9 +26,7 @@ struct vm_entry *find_vme(void *vaddr) /* 현재 프로세스의 주소공간에
     struct vm_entry vme;
     struct hash *vm = &thread_current()->vm;
     struct hash_elem *elem;
-    //printf("before\n");
     vme.vaddr = pg_round_down(vaddr);
-
     if ((elem = hash_find(vm, &vme.elem))) return hash_entry(elem, struct vm_entry, elem);
     else return NULL;
 }
@@ -94,29 +92,14 @@ void try_to_free_pages()
     struct page *page = is_victim();
     bool dirty = pagedir_is_dirty(page->thread->pagedir, page->vme->vaddr);
     
-    if (page->vme->type == VM_FILE && dirty)
+    if (page->vme->type == VM_FILE)
     {
-        // lock_acquire(&lock_file);
-        file_write_at(page->vme->file, page->kaddr, page->vme->read_bytes, page->vme->offset);
-        // lock_release(&lock_file);
+        if(dirty) file_write_at(page->vme->file, page->kaddr, page->vme->read_bytes, page->vme->offset);
     }
-    else
-    {
-        if (page->vme->type == VM_BIN && !dirty)
-        {
-            page->vme->is_loaded = false;
-            pagedir_clear_page(page->thread->pagedir, page->vme->vaddr);
-            del_page_from_lru_list(page);
-            palloc_free_page(page->kaddr);
-            free(page);
-            lock_release(&lru_lock);
-            return;
-        }
-        else
-        {
-            page->vme->swap_slot = swap_out(page->kaddr);
-            page->vme->type = VM_ANON;
-        }
+    else if (!(page->vme->type == VM_BIN && !dirty))
+    { 
+        page->vme->swap_slot = swap_out(page->kaddr);
+        page->vme->type = VM_ANON;
     }
 
     page->vme->is_loaded = false;
