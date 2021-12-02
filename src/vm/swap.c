@@ -28,7 +28,6 @@ void swap_in(size_t used_index, void *kaddr)
     if (used_index-- == 0)
         NOT_REACHED();
 
-    lock_acquire(&lock_file);
     lock_acquire(&lock_swap);
 
     int i;
@@ -37,7 +36,6 @@ void swap_in(size_t used_index, void *kaddr)
 
     bitmap_set_multiple(bitmap_swap, used_index, 1, false);
     lock_release(&lock_swap);
-    lock_release(&lock_file);
 }
 
 void swap_free(size_t used_index)
@@ -52,7 +50,6 @@ void swap_free(size_t used_index)
 size_t swap_out(void *kaddr)
 {
     block_swap = block_get_role(BLOCK_SWAP);
-    lock_acquire(&lock_file);
     lock_acquire(&lock_swap);
     size_t index_swap = bitmap_scan_and_flip(bitmap_swap, 0, 1, false);
     if (BITMAP_ERROR == index_swap)
@@ -66,6 +63,5 @@ size_t swap_out(void *kaddr)
         block_write(block_swap, index_swap * 8 + i, kaddr + BLOCK_SECTOR_SIZE * i);
 
     lock_release(&lock_swap);
-    lock_release(&lock_file);
     return index_swap + 1;
 }
