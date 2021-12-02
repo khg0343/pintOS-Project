@@ -45,6 +45,8 @@ struct page {
 void vm_init(struct hash *vm);  /* hash table 초기화 */
 void vm_destroy(struct hash *vm);   /* hash table 제거 */
 struct vm_entry *find_vme(void *vaddr); /* 현재 프로세스의 주소공간에서 vaddr에 해당하는 vm_entry를 검색 */
+struct vm_entry *make_vme( uint8_t type, void *vaddr, bool writable, bool is_loaded, struct file* file, 
+                           size_t offset, size_t read_bytes, size_t zero_bytes);
 bool insert_vme(struct hash *vm, struct vm_entry *vme); /* hash table에 vm_entry 삽입 */
 bool delete_vme(struct hash *vm, struct vm_entry *vme); /* 해시 테이블에서 vm_entry삭제 */
 bool load_file(void *kaddr, struct vm_entry *vme);

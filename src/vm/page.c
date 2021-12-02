@@ -31,6 +31,28 @@ struct vm_entry *find_vme(void *vaddr) /* 현재 프로세스의 주소공간에
     else return NULL;
 }
 
+struct vm_entry *make_vme( uint8_t type, void *vaddr, bool writable, bool is_loaded, struct file* file, 
+                           size_t offset, size_t read_bytes, size_t zero_bytes)
+{
+    /* vm_entry 생성 (malloc 사용) */
+    struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
+    if (!vme) return NULL;
+
+    /* vm_entry 멤버들 설정, 가상페이지가 요구될 때 읽어야할 파일의 오프셋과 사이즈, 마지막에 패딩할 제로 바이트 등등 */
+    memset(vme, 0, sizeof(struct vm_entry));
+    vme->type = type;
+    vme->vaddr = vaddr;
+    vme->writable = writable;
+    vme->is_loaded = is_loaded;
+
+    vme->file = file;
+    vme->offset = offset;
+    vme->read_bytes = read_bytes;
+    vme->zero_bytes = zero_bytes;
+
+    return vme;
+}
+
 bool insert_vme(struct hash *vm, struct vm_entry *vme) /* hash table에 vm_entry 삽입 */
 {
     if (!hash_insert(vm, &vme->elem))

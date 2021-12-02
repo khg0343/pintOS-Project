@@ -14,7 +14,8 @@
         "hash.h": "c",
         "string_view": "c",
         "page.h": "c",
-        "swap.h": "c"
+        "swap.h": "c",
+        "palloc.h": "c"
     },
     "cmake.configureOnOpen": true,
 }

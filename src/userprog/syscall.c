@@ -246,17 +246,8 @@ mmap(int fd, void *addr)
       size_t page_read_bytes = file_len < PGSIZE ? file_len : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      struct vm_entry *vme = (struct vm_entry *)malloc(sizeof (struct vm_entry));
-      memset (vme, 0, sizeof (struct vm_entry));
-      vme->type = VM_FILE;
-      vme->vaddr = addr;
-      vme->writable = true;
-      vme->is_loaded = false;
-
-      vme->file = mfe->file;
-      vme->offset = ofs;
-      vme->read_bytes = page_read_bytes;
-      vme->zero_bytes = page_zero_bytes;
+      struct vm_entry *vme = make_vme(VM_FILE, addr, true, false, mfe->file, ofs, page_read_bytes, page_zero_bytes);
+      if(!vme) return false;
 
       list_push_back(&mfe->vme_list, &vme->mmap_elem);
       insert_vme(&thread_current()->vm, vme);
@@ -284,7 +275,10 @@ void munmap(mapid_t mapid)
     struct vm_entry *vme = list_entry(e, struct vm_entry, mmap_elem);
     if (vme->is_loaded && pagedir_is_dirty(thread_current()->pagedir, vme->vaddr))
     {
+      lock_acquire(&lock_file);
       if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) NOT_REACHED();
+      lock_release(&lock_file);
+
       free_page(pagedir_get_page(thread_current()->pagedir,vme->vaddr));
     }
     vme->is_loaded = false;
@@ -341,14 +335,11 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_READ:
     get_argument(f->esp + 4, &argv[0], 3);
-    //printf("here1\n");
-    //check_valid_buffer((void *)argv[1], (unsigned)argv[2], f->esp, false); //Changed
     check_string((char*)argv[1],(unsigned)argv[2],f->esp);
     f->eax = read((int)argv[0], (void *)argv[1], (unsigned)argv[2]);
     break;
   case SYS_WRITE:
     get_argument(f->esp + 4, &argv[0], 3);
-    //check_valid_buffer((void *)argv[1], (unsigned)argv[2], f->esp, false); //Changed
     check_string((char*)argv[1],(unsigned)argv[2],f->esp);
     f->eax = write((int)argv[0], (const void *)argv[1], (unsigned)argv[2]);
     break;
