@@ -15,7 +15,14 @@
         "string_view": "c",
         "page.h": "c",
         "swap.h": "c",
-        "palloc.h": "c"
+        "palloc.h": "c",
+        "*.inc": "c",
+        "*.tcc": "c",
+        "fstream": "c",
+        "iosfwd": "c",
+        "limits": "c",
+        "sstream": "c",
+        "streambuf": "c"
     },
     "cmake.configureOnOpen": true,
 }

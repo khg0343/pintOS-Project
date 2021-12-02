@@ -708,14 +708,12 @@ struct file *process_get_file(int fd)
 
 void process_close_file(int fd)
 {
-  lock_acquire(&lock_file);
 	struct file *f;
 
 	if((f = process_get_file(fd))) {  /* file descriptor에 해당하는 파일을 닫음 */
 		file_close(f);
 		thread_current()->fd_table[fd] = NULL;  /* file descriptor 테이블 해당 엔트리 초기화 */
 	}
-  lock_release(&lock_file);
 }
 
 bool handle_mm_fault(struct vm_entry *vme)
