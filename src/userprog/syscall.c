@@ -20,7 +20,7 @@ static void valid_address(void *addr, void *esp)
   if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
   if(!find_vme(addr))
   {
-    if(!verify_stack((int32_t) addr, (int32_t)esp)) exit(-1);
+    if(!verify_stack((int32_t) addr, esp)) exit(-1);
     if(!expand_stack(addr)) exit(-1);
   }
 }
@@ -28,30 +28,6 @@ static void check_string(char *str, unsigned size, void *esp)
 {
   while(size--) valid_address((void*)str++,esp);
 }
-
-// static struct vm_entry *check_address(void *addr, void* esp)
-// {
-//   if(addr < (void *)0x08048000 || addr >= (void *)0xc0000000) exit(-1);
-//   return find_vme(addr);
-// }
-
-// void check_valid_buffer (void *buffer, unsigned size, void *esp, bool to_write)
-// {
-//   int i;
-//   for (i = 0; i < size; i++)
-//   {
-//     struct vm_entry *vme = check_address(buffer + i, esp);
-//     if (!vme)
-//     {
-//       if(!verify_stack((int32_t)buffer+i,(int32_t)esp)) exit(-1);
-//       if(!expand_stack(buffer+i)) exit(-1);
-//     }
-//     if (to_write && !vme->writable) 
-//     {
-//       exit(-1);
-//     }
-//   }
-// }
 
 void get_argument(void *esp, int *arg, int count)
 {
@@ -102,22 +78,25 @@ int wait(pid_t pid)
 
 bool create(const char *file, unsigned initial_size)
 {
-  if (file == NULL)
-   exit(-1);
-  return filesys_create(file, initial_size);
+  if (!file) exit(-1);
+  lock_acquire(&lock_file);
+  bool success = filesys_create(file, initial_size);
+  lock_release(&lock_file);
+  return success;
 }
 
 bool remove(const char *file)
 {
-  return filesys_remove(file);
+  lock_acquire(&lock_file);
+  bool success = filesys_remove(file);
+  lock_release(&lock_file);
+  return success;
 }
 
 int open(const char *file)
 {
   int fd;
   struct file *f;
-
-  if (!file) exit(-1);
     
   lock_acquire(&lock_file);
   f = filesys_open(file); /* 파일을 open */
@@ -136,12 +115,15 @@ int open(const char *file)
 
 int filesize(int fd)
 {
+  lock_acquire(&lock_file);
   struct file *f;
-  if ((f = process_get_file(fd)))
-  {                          /* file descriptor를 이용하여 파일 객체 검색 */
-    return file_length(f); /* 해당 파일의 길이를 리턴 */
+  int size;
+  if ((f = process_get_file(fd))) { /* file descriptor를 이용하여 파일 객체 검색 */
+    size = file_length(f); /* 해당 파일의 길이를 리턴 */
   }
-  return -1; /* 해당 파일이 존재하지 않으면 -1 리턴 */
+  else size = -1; /* 해당 파일이 존재하지 않으면 -1 리턴 */
+  lock_release(&lock_file);
+  return size;
 }
 
 int read(int fd, void *buffer, unsigned size)
@@ -197,20 +179,25 @@ int write(int fd, const void *buffer, unsigned size)
 
 void seek(int fd, unsigned position)
 {
+  lock_acquire(&lock_file);
   struct file *f = process_get_file(fd); /* file descriptor를 이용하여 파일 객체 검색 */
-
-  if (f != NULL)
-    file_seek(f, position); /* 해당 열린 파일의 위치(offset)를 position만큼 이동 */
+  if (f != NULL) file_seek(f, position); /* 해당 열린 파일의 위치(offset)를 position만큼 이동 */
+  lock_release(&lock_file);
 }
 
 unsigned
 tell(int fd)
 {
-  struct file *f = process_get_file(fd); /* file descriptor를 이용하여 파일 객체 검색 */
+  lock_acquire(&lock_file);
 
-  if (f != NULL)
-    return file_tell(f); /* 해당 열린 파일의 위치를 return */
-  return 0;
+  struct file *f = process_get_file(fd); /* file descriptor를 이용하여 파일 객체 검색 */
+  unsigned pos;
+  if (f != NULL) pos = file_tell(f); /* 해당 열린 파일의 위치를 return */
+  else pos = 0;
+  
+  lock_release(&lock_file);
+
+  return pos;
 }
 
 void close(int fd)
@@ -233,7 +220,9 @@ mmap(int fd, void *addr)
   
   memset (mfe, 0, sizeof(struct mmap_file));
   mfe->mapid = thread_current()->mmap_nxt++;
+  lock_acquire(&lock_file);
   mfe->file = file_reopen(process_get_file(fd));
+  lock_release(&lock_file);
   list_init(&mfe->vme_list);
   list_push_back(&thread_current()->mmap_list, &mfe->elem);
 
