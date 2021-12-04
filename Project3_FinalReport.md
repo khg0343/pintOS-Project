@@ -207,10 +207,8 @@ void process_exit (void) {
 </br>
 
 # **II.Lazy Loading**
-## **Analysis**
-현재 pintos는 process execute에 필요한 Disk의 file에 대해 바로 physical memory에 page를 할당하여 load하고, page fault가 발생하면 error로 간주하여 program 실행을 중지한다. 사용하지 않는 data가 load될 경우, physical memeory를 차지하여 메모리가 낭비된다. 따라서 virtual memory의 page를 이용하여 필요한 data만 load되도록 구현하고, page fault handler도 수정해야한다.
-
 ## **Brief Algorithm**
+현재 pintos는 process execute에 필요한 Disk의 file에 대해 바로 physical memory에 page를 할당하여 load하고, page fault가 발생하면 error로 간주하여 program 실행을 중지한다. 사용하지 않는 data가 load될 경우, physical memeory를 차지하여 메모리가 낭비된다. 따라서 virtual memory의 page를 이용하여 필요한 data만 load되도록 구현하고, page fault handler도 수정해야한다.
 처음에는 physical memory에 어떤 것도 load하지 않고, 각 file의 pointer 및 offset, size 등의 정보는 vm_entry에 저장한다. process execute를 통해 특정 virtual address에 접근할 때 physical page가 mapping되어 있지 않다면, page fault가 발생한다. page fault handler를 통해 접근이 시도된 vm_entry를 탐색한 후, vm_entry에 저장된 정보를 통해 data를 읽어 physical frame에 load하도록 구현한다.
 또한, page fault handler에서 Lazy Loading(I/O가 필요)과 Wrong memory access(I/O가 필요X) 각각의 상황이 동시에 발생할 경우, 후자의 상황에 대해 먼저 처리하고 전자의 상황을 처리해야한다.
 
@@ -704,21 +702,18 @@ struct page *find_page_in_lru_list(void *kaddr)
 
 > lru_list에서 physical address(kaddr)에 해당하는 page를 찾아 return하는 함수를 구현한다.
 ------------------------------
-
-------------------------------
-
 ```cpp
 void swap_init()
 {
   lock_init(&lock_swap);
-  bitmap_swap = bitmap_create(1024*8);
+  bitmap_swap = bitmap_create(1024*4);
   if (!bitmap_swap) return;
   block_swap = block_get_role(BLOCK_SWAP);
   if (!block_swap) return;
 }
 ```
 
-> Swapping은 bitmap structure에 의해 관리된다. bitmap과 block은 이미 pintos에 구현되어 있는 것을 사용했다. 해당 변수와 lock은 전역 변수로 선언하였다. swap_init은 swapping을 하기 위해 사용 할 structure을 초기화하는데 쓰인다. 이는, init.c의 main에서 호출한다.
+> Swapping은 bitmap structure에 의해 관리된다. bitmap과 block은 이미 pintos에 구현되어 있는 것을 사용했다. 해당 변수와 lock은 전역 변수로 선언하였다. swap_init은 swapping을 하기 위해 사용 할 structure을 초기화하는데 쓰인다. 이는, init.c의 main에서 호출한다. bitmap은 4KB으로 나누어 관리하고자 하였으므로 4*1024 = 4KB로 생성한다.
 ------------------------------
 
 ```cpp
@@ -889,7 +884,7 @@ struct page *victim_page()
 }
 ```
 
-> clock Algorithm을 이용하여 accessed bit이 0인 page를 찾는다.
+> Clock algorithm을 이용하여 accessed bit이 0인 page를 찾는다.
 > while loop을 돌면서 pagedir_is_accessed()함수를 통해 page table의 accessed bit이 0인 것을 찾는다.
 > 만약 1일 경우 이를 0으로 재설정해주고, 0일 경우 loop를 벗어나며 해당 page를 victim으로 선정하여 return한다.
 ------------------------------
