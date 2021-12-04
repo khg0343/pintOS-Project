@@ -280,7 +280,7 @@ static bool setup_stack(void **esp)
   /* vm_entry 생성 */
   kpage->vme = make_vme(VM_ANON, ((uint8_t *)PHYS_BASE) - PGSIZE, true, true, NULL, NULL, 0, 0);
   if (!kpage->vme)  return false;
-
+  add_page_to_lru_list(kpage);
   /* insert_vme() 함수로 hash table에 추가 */
   insert_vme(&thread_current()->vm, kpage->vme);
   return success;
@@ -360,6 +360,7 @@ bool handle_mm_fault(struct vm_entry *vme)
 
   // 로드 성공 여부 반환
   vme->is_loaded = true;
+  add_page_to_lru_list(kpage);
   return true;
 }
 ```
@@ -418,7 +419,7 @@ bool expand_stack(void *addr)
   /* vm_entry 생성 */
   kpage->vme = make_vme(VM_ANON, upage, true, true, NULL, NULL, 0, 0);
   if (!kpage->vme)  return false;
-
+  add_page_to_lru_list(kpage);
   /* insert_vme() 함수로 hash table에 추가 */
   insert_vme(&thread_current()->vm, kpage->vme);
   return success; 
@@ -506,9 +507,7 @@ struct mmap_file {
   struct list vme_list;  //이 data에 해당하는 모든 vm_entry의 list.
 };
 ```
-
-> TODO
-> mapping된 file들의 정보를 담을 수 있는 structure
+> mmap System call을 구현하기 위해 새로 선언한 data structure이다. Mapid는 identifier 역할을 하고, file은 mmap으로 load되어진 file pointer를 담는다. 이 mmap_file을 관리하는 list_elem을 추가하여 thread와 같은 관리 방법을 구현함으로써 일관된 구현을 유지하려 하였다. 추가로, 이 structure에 대항하는 vme를 파악하기 위해 list를 선언해주었다. 
 ------------------------------
 
 ```cpp
@@ -516,20 +515,17 @@ struct thread
 {
   ... 
   struct list mmap_list;  /*Added*/
-  int mmap_nxt;           /*Added*/
+  int mmap_nxt; /*Added*/
+  struct file *file_run;           /*Added*/
   ..
 };
-```
-
-```cpp
 struct vm_entry {
   ...
   struct list_elem mmap_elem; /* mmap_list element */ /*Added*/
   ...
 };
 ```
-
-> TODO
+> Thread에서 메모리에 load한 file을 파악할 필요가 있다. 따라서 list를 선언하여 이를 구현하였고, 몇개의 file이 mmap되어 있는지 파악하기 위해 mmap_nxt를 선언하였다. file_run은 file_reopen을 위한 file pointer이다. 
 
 ------------------------------
 
@@ -578,8 +574,7 @@ mapid_t mmap(int fd, void *addr)
 }
 ```
 
-> Lazy loading에 의해 file data를 memory에 load한다. fd는 process의 VA Space에 mapping할 file descriptor이고, addr은 mapping을 시작 할 주소이다. 이는 성공 시 mapping id를 return 하고, 실패 시 error -1을 return한다. 또한, mmap으로 mapping이 된 file은 mummap, process의 terminate 이전에는 접근이 가능해야 한다. 예로, munmap() 이전에 close() system call이 호출 되더라도 file mapping은 유효하여야 한다는 것이다. 이를 위해, filsys/file.c에 있는 method를 사용한다.
-------------------------------
+> System call : mmap을 구현한 것이다. File descriptor와 vaddr를 parameter로 요구하며, 위에서 선언한 mmap_file을 할당하여 mmap_file의 member variable들을 초기화 해준다. mapid는 thread에 선언한 mmap_nxt를 이용하여 넣어주고, 이후 increment를 진행한다. File이 close되어도 mmap시에는 열려있어야 하므로 file_reopen을 해준다. 이후, file의 길이 만큼 vm_entry를 생성해준다. 이때, vme의 종류는 VM_FILE로 설정한다. 
 
 ```cpp
 void munmap(mapid_t mapid)
@@ -606,7 +601,7 @@ void munmap(mapid_t mapid)
 }
 ```
 
-> 위에서 언급한 structure 내에서 mapid에 해당 되는 vm_entry를 해제하는 system call이다. 이때, 모든 mapid value가 close_all인 경우 모든 file mapping을 제거한다.
+> 넘겨 받은 mapid를 통하여 해당하는 mmap_file을 찾아준다. 이때, 찾는 주체는 thread에 있는 mmap_list를 순회하면서 탐색한다. 해당 mmap_file을 찾으면 찾은 structure에 있는 vme_list를 순회하여 이 파일을 load한 vme를 찾는다. Vme에 load여부를 파악하는 boolean variable을 false로 바꾸주고, 해당 vme를 지워준다. 이후, mmap_file에서도 해당 vme를 지우고, mfe를 free하여 준다.
 ------------------------------
 
 ```cpp
@@ -632,9 +627,7 @@ bool handle_mm_fault(struct vm_entry *vme)
 }
 ```
 
-> Supplemental Page Table에서 구현하였던 handle_mm_fault() 함수의 Switch-case 문에서 VM_FILE에 해당하는 case를 추가적으로 구현한다. vm_entry type이 VM_FILE인 경우 data를 load할 수 있도록 한다.
-
-추가적으로, process_exit시에 munmap이 호출되지 않음에 따라, delete되지 않아 메모리 누수를 일으킬 있는 것들을 제거한다. Project 2에서 orphan process와 비슷한 맥락의 경우이다.
+> Page fault가 발생하면 이 handler에서 physical page를 하나 할당하여 해당 주소와 page fault가 발생한 vme로 file을 load하여 memory에 올려주는 절차를 추가한다. 만약, load가 실패하였을 경우에는 미리 할당하였던 page를 해제하고 page_fault method에 false를 넘겨준다.
 
 </br>
 
@@ -712,16 +705,6 @@ struct page *find_page_in_lru_list(void *kaddr)
 > lru_list에서 physical address(kaddr)에 해당하는 page를 찾아 return하는 함수를 구현한다.
 ------------------------------
 
-```cpp
-struct vm_entry {
-  ...
-  size_t swap_slot; /*Added*/
-  ...
-};
-```
-
-> TODO
-
 ------------------------------
 
 ```cpp
@@ -735,8 +718,7 @@ void swap_init()
 }
 ```
 
-> Swapping을 다룰 영역을 initialization한다.
-> TODO
+> Swapping은 bitmap structure에 의해 관리된다. bitmap과 block은 이미 pintos에 구현되어 있는 것을 사용했다. 해당 변수와 lock은 전역 변수로 선언하였다. swap_init은 swapping을 하기 위해 사용 할 structure을 초기화하는데 쓰인다. 이는, init.c의 main에서 호출한다.
 ------------------------------
 
 ```cpp
@@ -796,7 +778,7 @@ void swap_free(size_t used_index)
 }
 ```
 
-> TODO
+> swapping에서 이용된 disk의 bitmap을 초기화는 method이다. Parameter로 vme에 선언되어 있는 swap_slot을 쓴다. Swap에 사용하였던 해당 disk sector의 bitmap을 0으로 초기화한다.
 ------------------------------
 
 ```cpp
@@ -816,7 +798,7 @@ static struct list_elem *get_next_lru_clock()
 }
 ```
 
-> TODO
+> LRU Algorithm의 일종이 Clock alogrithm을 통해 clock 정보를 얻는 것이다. Clock algorithm 구현은 수업시간 강의노트 LECTURE 10에 나온 내용을 토대로 구현하였다. lru_clock이 0이면 lru_list를 확인하여 lru_clock을 return 한다. 1이라면 다음 lru_clock을 찾아 recursive를 구현한다.
 ------------------------------
 
 ```cpp
@@ -974,8 +956,7 @@ vm_destroy_func(struct hash_elem *e, void *aux UNUSED)
 }
 ```
 
-> vm_destroy_func()에서 virtual address에 해당하는 page를 free하고,
-> TODO ??????
+> vm hash variable을 삭제 할 때, mapping되어 있는 pagedir과 swapping에 사용한 swap_slot을 넘겨 swapping table에 bitmap 또한 초기화 해준다.
 ------------------------------
 
 ```cpp
@@ -993,8 +974,7 @@ bool delete_vme(struct hash *vm, struct vm_entry *vme)
 }
 ```
 
-> delete_vme()에서도 
-> TODO ??????
+> 직접 vme을 삭제하는 method에서도 mapping 되어 있는 pagedir을 free해주고, bitmap 또한 초기화 한다.
 ------------------------------
 
 ```cpp
@@ -1075,7 +1055,7 @@ void munmap(mapid_t mapid)
 
 # **Discussion**
 ## 1. Lazy Loading
-> TODO
+> Lazy Loading을 구현하고 test를 진행하였는데, 한 개의 test도 통과하지 못하였었다. 디버깅을 한 결과, file이 load 되기 전에 어디선가 file이 close된다는 점을 알아냈다. file_close()는 여러곳에서 사용되고 있어, 어느 것이 잘못 되었는지, 어떠한 연쇄적으로 이루어지는 일로 발생하는 것은 아닌지로 인해 파악하는 것이 어려웠다. 다행히, load 되기 전에 file이 close된다는 점을 알아내 가능성이 가장 높은 load 말미에 있던 file_close를 없애보았다.
 
 ```cpp
 /* userprog/process.c */
@@ -1102,7 +1082,7 @@ load (const char *file_name, void (**eip) (void), void **esp){
 > 위와 같이 마지막에 file_close (file) 부분을 삭제하니, lazy loading이 이루어지는 것을 확인하였다.
 
 ## 2. Sync-read & write Test
-> Project2에서 잘 통과되던 test가 Project 3에서 돌아가지 않아, 이전 과제에서 구현하였던 부분 중에 잘못 구현한 부분이 있는지를 확인해보았다. TODO
+> Project2에서 잘 통과되던 test가 Project 3에서 돌아가지 않아, 이전 과제에서 구현하였던 부분 중에 잘못 구현한 부분이 있는지를 확인해보았다. 
 
 ```cpp
 tid_t
@@ -1129,7 +1109,7 @@ process_execute (const char *file_name)
   ...
 ```
 
-> TODO
+> Project 2에서는 어떠한 close 과정이 있어 잘 닫히고 처리되었던 filesys_open이 virtual memory & lazy loading으로 인해 mechanism이 변화가 있었고, 해당 부분의 open을 close해주지 못한 것 같다. 따라서, 위 부분을 지웠더니, read / write에 관한 sync 문제가 해결되었다.
 
 ## 3. Page test
 > tests/vm/page-linear, parallel, merge-seq, merge-par, merge-stk, merge-mm의 테스트는 이번 과제에서 통과하기 위해 가장 긴 시간을 투자한 부분이다.
@@ -1148,12 +1128,8 @@ bool create(const char *file, unsigned initial_size)
 ```
 
 > 그래서 위와 같이 file system과 관련된 함수에 lock을 걸어주었더니, file을 안전하게 open하였고 test에 통과할 수 있었다.
-
-## 4. Changed from Design Report
-> TODO
-
-## 5. What We have Learned
-> TODO
+## 4. What We have Learned
+> 위의 1,2,3 문제들에서 특히 어려움을 겪었는데 그 이유를 다음과 같이 생각한다. Project 3는 Project 2와 다르게 이전 Project를 기반으로 하여 구현을 진행하여야 한다. 이는 Project 2에서 어떠한 구현법을 채택하였느냐에 따라 Project 3에 영향을 끼칠 수 있다. 위의 문제들은 File에 관한 문제라는 것이 공통점이다. 구현을 마무리 할 때쯤, file synchronization을 구현하였던 방법이 기억났는데, 그때 당시 원래 Copy-on-write를 구현하고자 하였으나, 구현이 어려워 한 프로세스가 file을 열어 점유하고 있으면 해당 file은 접근을 못하게 구현하였다. 본 조의 생각으로는, 이렇게 구현하면 read / write는 의도한대로 구현이 이루어지고, open은 영향을 미치지 않을 것이라 생각하였다. 하지만, code를 구현하다보니 추가로 file을 열어야 할 경우가 발생하거나, 여러 child가 거의 동시에 file을 여는 test들이 존재하였다. OS 수업 복습을 하면서 Copy-on-write의 중요성을 파악하게 되었고, Project 2에서 구현의 어려움으로 인해 구현을 미숙하게 완료했던 부분이 Project 3에서 발목을 잡았다는 생각이 들었다. 실제로 구현은 대공사가 될 것 같아 해보지는 않았지만, child가 open을 여러번 하는 과정에서는 copy-on-write가 유용하게 이루어졌을 것이라는 점을 예상해보았다.
 
 </br>
 
