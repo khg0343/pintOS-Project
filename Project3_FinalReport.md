@@ -295,12 +295,8 @@ static bool setup_stack(void **esp)
 
 # **III. Supplemental Page Table**
 
-## **Analysis**
-현재 pintos는 Lazy loading, file memory mapping, swap table이 정상적으로 작동하도록 하는 함수 구현이 전혀 되어있지 않다. Lazy loading, file memory mapping, swap table이 모두 잘 작동할 수 있도록 구현이 수정되어야한다.
-
 ## **Brief Algorithm**
-현재 pintos는 page fault 발생시 처리를 위해 page_fault()라는 함수가 존재한다.
-이는 I의 Analysis에서 명시하였듯, 무조건 “segmentation fault”를 발생시키고 kill(-1)을 하여 강제종료하도록 구현되어있다. 이를 vm_entry type에 맞게 처리되도록 수정한다.
+현재 pintos는 Lazy loading, file memory mapping, swap table이 정상적으로 작동하도록 하는 함수 구현이 전혀 되어있지 않다. Lazy loading, file memory mapping, swap table이 모두 잘 작동할 수 있도록 구현이 수정되어야한다. pintos는 page fault 발생시 처리를 위해 page_fault()라는 함수가 존재한다. 원래는 무조건 “segmentation fault”를 발생시키고 kill(-1)을 하여 강제종료하도록 구현되어있다. 이를 vm_entry type에 맞게 처리되도록 수정한다.
 
 ## **Implementation**
 
@@ -329,7 +325,7 @@ static void page_fault (struct intr_frame *f) {
 }
 ```
 
-> find_vme를 이용하여 vm_entry를 찾은 후 해당 entry에 대해 page fault를 handle하는 함수를 호출한다.
+> 원래는 무조건 “segmentation fault”를 발생시키고 kill(-1)을 하여 강제종료하도록 구현되어있는 부분을 삭제하고, find_vme를 이용하여 vm_entry를 찾은 후 해당 entry에 대해 type별로 page fault를 handle하는 함수를 호출한다.
 ------------------------------
 
 ```cpp
@@ -369,7 +365,7 @@ bool handle_mm_fault(struct vm_entry *vme)
 ```
 
 > handle_mm_fault는 page fault시 이를 handle하기 위해 필요한 함수이다.
-> page fault 발생시 palloc_get_page() 함수를 이용하여 physical page를 할당하고, switch문으로 vm_entry type별로 처리한다.
+> page fault 발생시 palloc_get_page() 함수를 이용하여 physical page를 할당하고, switch문으로 vm_entry의 type별로 처리한다. 
 > 이 단계에서는 일단 먼저 VM_BIN에 대해서만 구현하고, 다른 type에 대해서는 아래의 단계에서 추가로 구현한다.
 > VM_BIN일 경우 load_file()함수를 이용해서 physical page에 Disk에 있는 file을 load한다.
 > 각 타입에 대해 load가 완료되었으면, install_page() 함수를 이용하여 page table로 virtual address와 physical address를 mapping한 후 그 성공 여부를 반환한다.
@@ -392,13 +388,9 @@ bool load_file(void *kaddr, struct vm_entry *vme)
 
 # **IV. Stack Growth**
 
-## **Analysis**
-Current Pintos System에는 1 page(4KB)로 fixed되어, Stack 확장이 불가능하게 구현되어있다.
-따라서, Stack 확장이 가능하도록 구현하여야한다.
-
 ## **Brief Algorithm**
-stack pointer esp가 유효한 stack의 영역을 벗어나면 segmentation fault가 발생한다.
-먼저, 현재 stack size를 초과하는 주소에 접근이 발생했을 때, page fault handler에서 stack확장이 필요한지 판별하게 한다. 필요한 경우로 최대 limit이내의 접근일 경우 valid한 stack 접근으로 간주하며, interupt frame에서 esp를 가져온다. 이때 필요한 page 수를 계산하는 과정이 필요하다. 또한 pintos document에 명시된대로, 최대 8MB까지 stack을 확장할 수 있도록 수정한다.
+Current Pintos System에는 1 page(4KB)로 fixed되어, Stack 확장이 불가능하게 구현되어있다.
+따라서, Stack 확장이 가능하도록 구현하여야한다. stack pointer esp가 유효한 stack의 영역을 벗어나면 segmentation fault가 발생한다. 먼저, 현재 stack size를 초과하는 주소에 접근이 발생했을 때, page fault handler에서 stack확장이 필요한지 판별하게 한다. 필요한 경우로 최대 limit이내의 접근일 경우 valid한 stack 접근으로 간주하며, interupt frame에서 esp를 가져온다. 이때 필요한 page 수를 계산하는 과정이 필요하다. 또한 pintos document에 명시된대로, 최대 8MB까지 stack을 확장할 수 있도록 수정한다.
 
 ## **Implementation**
 
@@ -605,14 +597,6 @@ void munmap(mapid_t mapid)
   for (ele = list_begin(&mfe->vme_list); ele != list_end(&mfe->vme_list);)
   {
     struct vm_entry *vme = list_entry(ele, struct vm_entry, mmap_elem);
-    if (vme->is_loaded && pagedir_is_dirty(thread_current()->pagedir, vme->vaddr))
-    {
-      lock_acquire(&lock_file);
-      if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) NOT_REACHED();
-      lock_release(&lock_file);
-
-      free_page(pagedir_get_page(thread_current()->pagedir,vme->vaddr));
-    }
     vme->is_loaded = false;
     ele = list_remove(ele);
     delete_vme(&thread_current()->vm, vme);
@@ -975,7 +959,7 @@ main (void)
 }
 ```
 
-> pintos main program이 시작할때, swap_init과 lru_list_init을 호출하여 initialize해준다. 
+> pintos main program이 시작할때, swap_init과 lru_list_init을 호출하여 initialize해준다.
 ------------------------------
 
 ```cpp
@@ -990,7 +974,26 @@ vm_destroy_func(struct hash_elem *e, void *aux UNUSED)
 }
 ```
 
-> vm_destroy_func()에 virtual address에 해당하는 page를 free하고,
+> vm_destroy_func()에서 virtual address에 해당하는 page를 free하고,
+> TODO ??????
+------------------------------
+
+```cpp
+bool delete_vme(struct hash *vm, struct vm_entry *vme)
+{
+  if (!hash_delete(vm, &vme->elem))
+    return false;
+  else
+  {
+    free_page(pagedir_get_page(thread_current()->pagedir, vme->vaddr));
+    swap_free(vme->swap_slot);
+    free(vme);
+    return true;
+  }
+}
+```
+
+> delete_vme()에서도 
 > TODO ??????
 ------------------------------
 
@@ -1045,20 +1048,11 @@ void process_exit (void){
 ```cpp
 void munmap(mapid_t mapid)
 {
-  struct mmap_file *mfe = NULL;
-  struct list_elem *ele;
-  for (ele = list_begin(&thread_current()->mmap_list); ele != list_end(&thread_current()->mmap_list); ele = list_next (ele))
-  {
-    mfe = list_entry (ele, struct mmap_file, elem);
-    if (mfe->mapid == mapid) break;
-  }
-
-  if (!mfe) return;
-  
+  ...
   for (ele = list_begin(&mfe->vme_list); ele != list_end(&mfe->vme_list);)
   {
     struct vm_entry *vme = list_entry(ele, struct vm_entry, mmap_elem);
-    if (vme->is_loaded && pagedir_is_dirty(thread_current()->pagedir, vme->vaddr))
+    if (vme->is_loaded && pagedir_is_dirty(thread_current()->pagedir, vme->vaddr))  /*Added*/
     {
       lock_acquire(&lock_file);
       if (file_write_at(vme->file, vme->vaddr, vme->read_bytes, vme->offset) != (int)vme->read_bytes) NOT_REACHED();
@@ -1081,7 +1075,7 @@ void munmap(mapid_t mapid)
 
 # **Discussion**
 ## 1. Lazy Loading
-> 
+> TODO
 
 ```cpp
 /* userprog/process.c */
@@ -1108,7 +1102,7 @@ load (const char *file_name, void (**eip) (void), void **esp){
 > 위와 같이 마지막에 file_close (file) 부분을 삭제하니, lazy loading이 이루어지는 것을 확인하였다.
 
 ## 2. Sync-read & write Test
-> Project2에서 잘 통과되던 test가 Project 3에서 돌아가지 않아, 이전 과제에서 구현하였던 부분 중에 잘못 구현한 부분이 있는지를 확인해보았다.
+> Project2에서 잘 통과되던 test가 Project 3에서 돌아가지 않아, 이전 과제에서 구현하였던 부분 중에 잘못 구현한 부분이 있는지를 확인해보았다. TODO
 
 ```cpp
 tid_t
@@ -1135,7 +1129,7 @@ process_execute (const char *file_name)
   ...
 ```
 
-> 
+> TODO
 
 ## 3. Page test
 > tests/vm/page-linear, parallel, merge-seq, merge-par, merge-stk, merge-mm의 테스트는 이번 과제에서 통과하기 위해 가장 긴 시간을 투자한 부분이다.
@@ -1156,16 +1150,16 @@ bool create(const char *file, unsigned initial_size)
 > 그래서 위와 같이 file system과 관련된 함수에 lock을 걸어주었더니, file을 안전하게 open하였고 test에 통과할 수 있었다.
 
 ## 4. Changed from Design Report
-> A
+> TODO
 
 ## 5. What We have Learned
-> 우
+> TODO
 
 </br>
 
 # **Result**
 서버에서 make check를 입력하여 나온 모든 test에 대한 결과값이다.
 
-![Result](./img/result.PNG)
+![Result](./img/result3.PNG)
 
 위와 같이 이번 PintOS Project 3의 모든 test를 pass한 모습을 볼 수 있다.
