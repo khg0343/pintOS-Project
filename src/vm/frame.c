@@ -16,14 +16,14 @@ void lru_list_init(void)
 void add_page_to_lru_list(struct page *page)
 {
   lock_acquire(&lru_lock);
-  list_push_back(&lru_list, &page->lru);
+  list_push_back(&lru_list, &page->lru_elem);
   lock_release(&lru_lock);
 }
 
 void del_page_from_lru_list(struct page *page)
 {
-  if (lru_clock == &page->lru) lru_clock = list_remove(lru_clock);
-  else list_remove(&page->lru);
+  if (lru_clock == &page->lru_elem) lru_clock = list_remove(lru_clock);
+  else list_remove(&page->lru_elem);
 }
 
 static struct list_elem *get_next_lru_clock()
@@ -47,7 +47,7 @@ struct page *find_page_in_lru_list(void *kaddr)
   struct list_elem *ele;
   for (ele = list_begin(&lru_list); ele != list_end(&lru_list); ele = list_next(ele))
   {
-    struct page *page = list_entry(ele, struct page, lru);
+    struct page *page = list_entry(ele, struct page, lru_elem);
     if (page->kaddr == kaddr)
       return page;
   }
@@ -57,12 +57,12 @@ struct page *find_page_in_lru_list(void *kaddr)
 struct page *is_victim()
 {
   struct list_elem *ele = get_next_lru_clock();
-  struct page *page = list_entry(ele, struct page, lru);
-  while (page->vme->victed || pagedir_is_accessed(page->thread->pagedir, page->vme->vaddr))
+  struct page *page = list_entry(ele, struct page, lru_elem);
+  while (pagedir_is_accessed(page->thread->pagedir, page->vme->vaddr))
   {
     pagedir_set_accessed(page->thread->pagedir, page->vme->vaddr, false);
     ele = get_next_lru_clock();
-    page = list_entry(ele, struct page, lru);
+    page = list_entry(ele, struct page, lru_elem);
   }
   return page;
 }

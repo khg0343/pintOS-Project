@@ -38,7 +38,7 @@ struct vm_entry *make_vme( uint8_t type, void *vaddr, bool writable, bool is_loa
     struct vm_entry *vme = (struct vm_entry *)malloc(sizeof(struct vm_entry));
     if (!vme) return NULL;
 
-    /* vm_entry 멤버들 설정, 가상페이지가 요구될 때 읽어야할 파일의 오프셋과 사이즈, 마지막에 패딩할 제로 바이트 등등 */
+    /* vm_entry 멤버들 설정, virtual page가 요구될 때 읽어야할 파일의 오프셋과 사이즈, 마지막에 패딩할 제로 바이트 등등 */
     memset(vme, 0, sizeof(struct vm_entry));
     vme->type = type;
     vme->vaddr = vaddr;

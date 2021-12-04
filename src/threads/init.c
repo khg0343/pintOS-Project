@@ -116,7 +116,7 @@ main (void)
   exception_init ();
   syscall_init ();
 #endif
-  swap_init(1024*8);
+  swap_init();
   lru_list_init();
 
   /* Start thread scheduler and enable interrupts. */

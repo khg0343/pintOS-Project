@@ -17,7 +17,6 @@ struct vm_entry {
     bool writable; /* 해당 주소에 write 가능 여부 */
     bool is_loaded; /* physical memory의 load 여부를 알려주는 flag */
     struct file* file; /* mapping된 파일 */
-    bool victed;
     size_t offset; /* read 할 파일 offset */
     size_t read_bytes; /* virtual page에 쓰여져 있는 데이터 byte 수 */
     size_t zero_bytes; /* 0으로 채울 남은 페이지의 byte 수 */
@@ -38,7 +37,7 @@ struct page {
     void *kaddr;
     struct vm_entry *vme;
     struct thread *thread;
-    struct list_elem lru;
+    struct list_elem lru_elem;
 };
 
 

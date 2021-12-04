@@ -9,10 +9,10 @@ struct lock lock_swap;
 struct block *block_swap;
 struct bitmap *bitmap_swap;
 
-void swap_init(size_t size)
+void swap_init()
 {
     lock_init(&lock_swap);
-    bitmap_swap = bitmap_create(size);
+    bitmap_swap = bitmap_create(1024*8);
     block_swap = block_get_role(BLOCK_SWAP);
     if (!block_swap)
         return;

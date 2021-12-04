@@ -96,16 +96,16 @@ bool remove(const char *file)
 int open(const char *file)
 {
   int fd;
-  struct file *f;
+  struct file *mfe;
     
   lock_acquire(&lock_file);
-  f = filesys_open(file); /* 파일을 open */
+  mfe = filesys_open(file); /* 파일을 open */
 
-  if (!strcmp(thread_current()->name, file)) file_deny_write(f); /*ROX TEST*/
+  if (!strcmp(thread_current()->name, file)) file_deny_write(mfe); /*ROX TEST*/
 
-  if (f != NULL)
+  if (mfe != NULL)
   {
-    fd = process_add_file(f); /* 해당 파일 객체에 file descriptor 부여 */
+    fd = process_add_file(mfe); /* 해당 파일 객체에 file descriptor 부여 */
     lock_release(&lock_file);
     return fd; /* file descriptor 리턴 */
   }
@@ -116,10 +116,10 @@ int open(const char *file)
 int filesize(int fd)
 {
   lock_acquire(&lock_file);
-  struct file *f;
+  struct file *mfe;
   int size;
-  if ((f = process_get_file(fd))) { /* file descriptor를 이용하여 파일 객체 검색 */
-    size = file_length(f); /* 해당 파일의 길이를 리턴 */
+  if ((mfe = process_get_file(fd))) { /* file descriptor를 이용하여 파일 객체 검색 */
+    size = file_length(mfe); /* 해당 파일의 길이를 리턴 */
   }
   else size = -1; /* 해당 파일이 존재하지 않으면 -1 리턴 */
   lock_release(&lock_file);
@@ -129,7 +129,7 @@ int filesize(int fd)
 int read(int fd, void *buffer, unsigned size)
 {
   int read_size = 0;
-  struct file *f;
+  struct file *mfe;
 
   lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
@@ -145,8 +145,8 @@ int read(int fd, void *buffer, unsigned size)
   }
   else /* file descriptor가 0이 아닐 경우 파일의 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
   {
-    if ((f = process_get_file(fd)))
-      read_size = file_read(f, buffer, size); 
+    if ((mfe = process_get_file(fd)))
+      read_size = file_read(mfe, buffer, size); 
   }
 
   lock_release(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
@@ -157,7 +157,7 @@ int read(int fd, void *buffer, unsigned size)
 int write(int fd, const void *buffer, unsigned size)
 {
   int write_size = 0;
-  struct file *f;
+  struct file *mfe;
 
   lock_acquire(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
 
@@ -168,8 +168,8 @@ int write(int fd, const void *buffer, unsigned size)
   }
   else /* file descriptor가 1이 아닐 경우 버퍼에 저장된 데이터를 크기만큼 파일에 기록후 기록한 바이트 수를 리턴 */
   { 
-    if ((f = process_get_file(fd)))
-      write_size = file_write(f, (const void *)buffer, size);
+    if ((mfe = process_get_file(fd)))
+      write_size = file_write(mfe, (const void *)buffer, size);
   }
 
   lock_release(&lock_file); /* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
@@ -180,8 +180,8 @@ int write(int fd, const void *buffer, unsigned size)
 void seek(int fd, unsigned position)
 {
   lock_acquire(&lock_file);
-  struct file *f = process_get_file(fd); /* file descriptor를 이용하여 파일 객체 검색 */
-  if (f != NULL) file_seek(f, position); /* 해당 열린 파일의 위치(offset)를 position만큼 이동 */
+  struct file *mfe = process_get_file(fd); /* file descriptor를 이용하여 파일 객체 검색 */
+  if (mfe != NULL) file_seek(mfe, position); /* 해당 열린 파일의 위치(offset)를 position만큼 이동 */
   lock_release(&lock_file);
 }
 
@@ -190,9 +190,9 @@ tell(int fd)
 {
   lock_acquire(&lock_file);
 
-  struct file *f = process_get_file(fd); /* file descriptor를 이용하여 파일 객체 검색 */
+  struct file *mfe = process_get_file(fd); /* file descriptor를 이용하여 파일 객체 검색 */
   unsigned pos;
-  if (f != NULL) pos = file_tell(f); /* 해당 열린 파일의 위치를 return */
+  if (mfe != NULL) pos = file_tell(mfe); /* 해당 열린 파일의 위치를 return */
   else pos = 0;
   
   lock_release(&lock_file);
@@ -220,48 +220,50 @@ mmap(int fd, void *addr)
   
   memset (mfe, 0, sizeof(struct mmap_file));
   mfe->mapid = thread_current()->mmap_nxt++;
+
   lock_acquire(&lock_file);
   mfe->file = file_reopen(process_get_file(fd));
   lock_release(&lock_file);
+
   list_init(&mfe->vme_list);
   list_push_back(&thread_current()->mmap_list, &mfe->elem);
 
   //vm_entry 생성 및 초기화
   int file_len = file_length(mfe->file);
   while (file_len > 0)
-    {
-      if (find_vme (addr)) return -1;
+  {
+    if (find_vme (addr)) return -1;
 
-      size_t page_read_bytes = file_len < PGSIZE ? file_len : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+    size_t page_read_bytes = file_len < PGSIZE ? file_len : PGSIZE;
+    size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      struct vm_entry *vme = make_vme(VM_FILE, addr, true, false, mfe->file, ofs, page_read_bytes, page_zero_bytes);
-      if(!vme) return false;
+    struct vm_entry *vme = make_vme(VM_FILE, addr, true, false, mfe->file, ofs, page_read_bytes, page_zero_bytes);
+    if(!vme) return false;
+    list_push_back(&mfe->vme_list, &vme->mmap_elem);
+    insert_vme(&thread_current()->vm, vme);
 
-      list_push_back(&mfe->vme_list, &vme->mmap_elem);
-      insert_vme(&thread_current()->vm, vme);
-      addr += PGSIZE;
-      ofs += PGSIZE;
-      file_len -= PGSIZE;
-    }
+    addr += PGSIZE;
+    ofs += PGSIZE;
+    file_len -= PGSIZE;
+  }
   return mfe->mapid;
 }
 
 void munmap(mapid_t mapid)
 {
-  struct mmap_file *f = NULL;
-  struct list_elem *e;
-  for (e = list_begin(&thread_current()->mmap_list); e != list_end(&thread_current()->mmap_list); e = list_next (e))
+  struct mmap_file *mfe = NULL;
+  struct list_elem *ele;
+  for (ele = list_begin(&thread_current()->mmap_list); ele != list_end(&thread_current()->mmap_list); ele = list_next (ele))
   {
-    f = list_entry (e, struct mmap_file, elem);
-    if (f->mapid == mapid) break;
+    mfe = list_entry (ele, struct mmap_file, elem);
+    if (mfe->mapid == mapid) break;
   }
 
-  if (!f) return;
+  if (!mfe) return;
   
-  for (e = list_begin(&f->vme_list); e != list_end(&f->vme_list);)
+  for (ele = list_begin(&mfe->vme_list); ele != list_end(&mfe->vme_list);)
   {
-    struct vm_entry *vme = list_entry(e, struct vm_entry, mmap_elem);
+    struct vm_entry *vme = list_entry(ele, struct vm_entry, mmap_elem);
     if (vme->is_loaded && pagedir_is_dirty(thread_current()->pagedir, vme->vaddr))
     {
       lock_acquire(&lock_file);
@@ -271,85 +273,85 @@ void munmap(mapid_t mapid)
       free_page(pagedir_get_page(thread_current()->pagedir,vme->vaddr));
     }
     vme->is_loaded = false;
-    e = list_remove(e);
+    ele = list_remove(ele);
     delete_vme(&thread_current()->vm, vme);
   }
-  list_remove(&f->elem);
-  free(f);
+  list_remove(&mfe->elem);
+  free(mfe);
 }
 
 static void
-syscall_handler(struct intr_frame *f)
+syscall_handler(struct intr_frame *mfe)
 {
   
   int argv[4];
-  valid_address(f->esp, f->esp);
+  valid_address(mfe->esp, mfe->esp);
 
-  switch (*(uint32_t *)(f->esp))
+  switch (*(uint32_t *)(mfe->esp))
   {
   case SYS_HALT:
     halt();
     break;
   case SYS_EXIT:
-    get_argument(f->esp + 4, &argv[0], 1);
+    get_argument(mfe->esp + 4, &argv[0], 1);
     exit((int)argv[0]);
     break;
   case SYS_EXEC:
-    get_argument(f->esp + 4, &argv[0], 1);
-    valid_address((void *)argv[0], f->esp);
-    f->eax = exec((const char *)argv[0]);
+    get_argument(mfe->esp + 4, &argv[0], 1);
+    valid_address((void *)argv[0], mfe->esp);
+    mfe->eax = exec((const char *)argv[0]);
     break;
   case SYS_WAIT:
-    get_argument(f->esp + 4, &argv[0], 1);
-    f->eax = wait((pid_t)argv[0]);
+    get_argument(mfe->esp + 4, &argv[0], 1);
+    mfe->eax = wait((pid_t)argv[0]);
     break;
   case SYS_CREATE:
-    get_argument(f->esp + 4, &argv[0], 2);
-    valid_address((void *)argv[0], f->esp);
-    f->eax = create((const char *)argv[0], (unsigned)argv[1]);
+    get_argument(mfe->esp + 4, &argv[0], 2);
+    valid_address((void *)argv[0], mfe->esp);
+    mfe->eax = create((const char *)argv[0], (unsigned)argv[1]);
     break;
   case SYS_REMOVE:
-    get_argument(f->esp + 4, &argv[0], 1);
-    valid_address((void *)argv[0], f->esp);
-    f->eax = remove((const char *)argv[0]);
+    get_argument(mfe->esp + 4, &argv[0], 1);
+    valid_address((void *)argv[0], mfe->esp);
+    mfe->eax = remove((const char *)argv[0]);
     break;
   case SYS_OPEN:
-    get_argument(f->esp + 4, &argv[0], 1);
-    valid_address((void *)argv[0], f->esp);
-    f->eax = open((const char *)argv[0]);
+    get_argument(mfe->esp + 4, &argv[0], 1);
+    valid_address((void *)argv[0], mfe->esp);
+    mfe->eax = open((const char *)argv[0]);
     break;
   case SYS_FILESIZE:
-    get_argument(f->esp + 4, &argv[0], 1);
-    f->eax = filesize(argv[0]);
+    get_argument(mfe->esp + 4, &argv[0], 1);
+    mfe->eax = filesize(argv[0]);
     break;
   case SYS_READ:
-    get_argument(f->esp + 4, &argv[0], 3);
-    check_string((char*)argv[1],(unsigned)argv[2],f->esp);
-    f->eax = read((int)argv[0], (void *)argv[1], (unsigned)argv[2]);
+    get_argument(mfe->esp + 4, &argv[0], 3);
+    check_string((char*)argv[1],(unsigned)argv[2],mfe->esp);
+    mfe->eax = read((int)argv[0], (void *)argv[1], (unsigned)argv[2]);
     break;
   case SYS_WRITE:
-    get_argument(f->esp + 4, &argv[0], 3);
-    check_string((char*)argv[1],(unsigned)argv[2],f->esp);
-    f->eax = write((int)argv[0], (const void *)argv[1], (unsigned)argv[2]);
+    get_argument(mfe->esp + 4, &argv[0], 3);
+    check_string((char*)argv[1],(unsigned)argv[2],mfe->esp);
+    mfe->eax = write((int)argv[0], (const void *)argv[1], (unsigned)argv[2]);
     break;
   case SYS_SEEK:
-    get_argument(f->esp + 4, &argv[0], 2);
+    get_argument(mfe->esp + 4, &argv[0], 2);
     seek(argv[0], (unsigned)argv[1]);
     break;
   case SYS_TELL:
-    get_argument(f->esp + 4, &argv[0], 1);
-    f->eax = tell(argv[0]);
+    get_argument(mfe->esp + 4, &argv[0], 1);
+    mfe->eax = tell(argv[0]);
     break;
   case SYS_CLOSE:
-    get_argument(f->esp + 4, &argv[0], 1);
+    get_argument(mfe->esp + 4, &argv[0], 1);
     close(argv[0]);
     break;
   case SYS_MMAP:
-    get_argument(f->esp + 4, &argv[0], 2);
-    f->eax = mmap(argv[0], (void *)argv[1]);
+    get_argument(mfe->esp + 4, &argv[0], 2);
+    mfe->eax = mmap(argv[0], (void *)argv[1]);
     break;
   case SYS_MUNMAP:
-    get_argument(f->esp + 4, &argv[0], 1);
+    get_argument(mfe->esp + 4, &argv[0], 1);
     munmap(argv[0]);
     break;
   default:

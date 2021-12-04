@@ -743,7 +743,7 @@ bool handle_mm_fault(struct vm_entry *vme)
     NOT_REACHED ();
   }
 
-  // install_page를 이용해서 물리페이지와 가상페이지 맵핑
+  // install_page를 이용해서 physical page와 virtual page 맵핑
   if (!install_page(vme->vaddr, kpage->kaddr, vme->writable))
   {
     free_page(kpage->kaddr);
