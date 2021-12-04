@@ -19,7 +19,7 @@ void add_page_to_lru_list(struct page *page);
 void del_page_from_lru_list(struct page *page);
 struct page *find_page_in_lru_list(void *kaddr);
 void try_to_free_pages();
-struct page *is_victim();
+struct page *victim_page();
 
 
 #endif

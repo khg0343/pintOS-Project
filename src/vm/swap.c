@@ -13,13 +13,9 @@ void swap_init()
 {
     lock_init(&lock_swap);
     bitmap_swap = bitmap_create(1024*8);
+    if (!bitmap_swap) return;
     block_swap = block_get_role(BLOCK_SWAP);
-    if (!block_swap)
-        return;
-
-    bitmap_swap = bitmap_create(block_size(block_swap) / 8);
-    if (!bitmap_swap)
-        return;
+    if (!block_swap) return;
 }
 
 void swap_in(size_t used_index, void *kaddr)

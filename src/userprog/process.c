@@ -587,11 +587,8 @@ setup_stack(void **esp)
   kpage->vme = make_vme(VM_ANON, ((uint8_t *)PHYS_BASE) - PGSIZE, true, true, NULL, NULL, 0, 0);
   if (!kpage->vme)  return false;
 
-  add_page_to_lru_list (kpage);
-
   /* insert_vme() 함수로 hash table에 추가 */
   insert_vme(&thread_current()->vm, kpage->vme);
-
   return success;
 }
 
@@ -632,8 +629,6 @@ bool expand_stack(void *addr)
   /* vm_entry 생성 */
   kpage->vme = make_vme(VM_ANON, upage, true, true, NULL, NULL, 0, 0);
   if (!kpage->vme)  return false;
-
-  add_page_to_lru_list (kpage);
 
   /* insert_vme() 함수로 hash table에 추가 */
   insert_vme(&thread_current()->vm, kpage->vme);
@@ -752,6 +747,5 @@ bool handle_mm_fault(struct vm_entry *vme)
 
   // 로드 성공 여부 반환
   vme->is_loaded = true;
-  add_page_to_lru_list(kpage);
   return true;
 }

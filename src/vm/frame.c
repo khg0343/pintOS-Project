@@ -54,7 +54,7 @@ struct page *find_page_in_lru_list(void *kaddr)
   return NULL;
 }
 
-struct page *is_victim()
+struct page *victim_page()
 {
   struct list_elem *ele = get_next_lru_clock();
   struct page *page = list_entry(ele, struct page, lru_elem);

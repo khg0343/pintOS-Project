@@ -111,7 +111,7 @@ void try_to_free_pages()
 {
     lock_acquire(&lru_lock);
 
-    struct page *page = is_victim();
+    struct page *page = victim_page();
     bool dirty = pagedir_is_dirty(page->thread->pagedir, page->vme->vaddr);
     
     if (page->vme->type == VM_FILE)
@@ -136,8 +136,7 @@ struct page *alloc_page(enum palloc_flags flags)
 {
     struct page *page;
     page = (struct page *)malloc(sizeof(struct page));
-    if (!page)
-        return NULL;
+    if (!page) return NULL;
 
     memset(page, 0, sizeof(struct page));
     page->thread = thread_current();
@@ -148,6 +147,7 @@ struct page *alloc_page(enum palloc_flags flags)
         page->kaddr = palloc_get_page(flags);
     }
     
+    add_page_to_lru_list(page);
     return page;
 }
 

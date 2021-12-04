@@ -9,9 +9,6 @@
 ------------------------------
 
 # **I. Frame Table**
-## **Analysis**
-현재 pintos는 frame table에 대해 구현된 사항이 없다.
-
 ## **Brief Algorithm**
 Frame을 효율적으로 관리하기 위해 필요한 virtual memory frame table을 구현해야한다. table의 각 entry는 user program의 page하나에 대응되고, 각각의 thread마다 frame table을 가지고 있어야한다. 각 table은 탐색이 빠른 hash로 구현하며, vaddr로 hash값을 추출한다. hash와 관련된 code는 src/lib/kernel/hash.*에 정의되어있어, 이를 사용하면 된다.
 
@@ -32,7 +29,7 @@ struct vm_entry{
 }
 ```
 
-> frame table의 entry를 위와 같이 정의한다.
+> virtual memory의 frame table entry를 위와 같이 정의한다.
 ------------------------------
 
 ```cpp
@@ -47,7 +44,7 @@ struct thread {
 }
 ```
 
-> 각 thread마다 frame을 관리하는 table을 hash type으로 추가한다.
+> 각 thread마다 virtual address space의 frame table을 hash type으로 추가한다.
 ------------------------------
 
 ```cpp
@@ -58,7 +55,7 @@ void vm_init(struct hash *vm) /* hash table 초기화 */
 }
 ```
 
-> frame table을 초기화하는 함수를 추가한다.
+> hash_init()를 사용하여 vm을 initialize하는 함수를 추가한다.
 ------------------------------
 
 ```cpp
@@ -69,7 +66,7 @@ void vm_destroy(struct hash *vm) /* hash table 제거 */
 }
 ```
 
-> frame table을 destroy하는 함수를 추가한다.
+> hash_destroy()를 사용하여 vm을 destroy하는 함수를 추가한다.
 ------------------------------
 
 ```cpp
@@ -106,6 +103,7 @@ vm_destroy_func(struct hash_elem *e, void *aux UNUSED)
 ```
 
 > vm_destroy 구현에 필요한, element에 대한 vm_entry를 free시키는 함수를 추가한다.
+> hash_entry를 통해 vm_entry를 찾고 이를 free시킨다.
 ------------------------------
 
 ```cpp
@@ -117,6 +115,7 @@ bool insert_vme(struct hash *vm, struct vm_entry *vme) {
 ```
 
 > hash table에 vm_entry를 삽입하는 함수를 추가한다.
+> hash_insert()를 이용하여 vm에 vm_entry element를 추가하고 그 성공여부를 return한다.
 ------------------------------
 
 ```cpp
@@ -133,6 +132,7 @@ bool delete_vme(struct hash *vm, struct vm_entry *vme) {
 ```
 
 > hash table에서 vm_entry를 삭제하는 함수를 추가한다.
+> hash_delete()를 이용하여 vm에서 vm_entry element를 삭제하고 vm_entry를 free시킨 후 그 성공여부를 return한다.
 ------------------------------
 
 ```cpp
@@ -149,6 +149,7 @@ struct vm_entry *find_vme (void *vaddr) {
 ```
 
 > vaddr에 해당하는 hash_elem의 vm_entry를 찾아주는 함수를 추가한다.
+> hash_find()를 이용하여 vm에서 virtual address에 해당하는 vm의 entry를 찾고 이를 return한다.
 ------------------------------
 
 ```cpp
@@ -251,9 +252,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 }
 ```
 
-> load_segment는 segment를 process의 virtual address space에 load하는 함수이다. </br>
-> 원래는 load_segment가 실행되면 page를 할당하고, file을 page에 load하고 process's address space에 page를 저장하도록 구현되어있다. </br>
-> 하지만 이 부분은 삭제하고, vm_entry를 할당하고 초기화하며, vm (hash table)에 insert하도록 수정한다.
+> load_segment는 segment를 process의 virtual address space에 load하는 함수이다.
+> 원래는 load_segment가 실행되면 page를 할당하고, file을 page에 load하고 process's address space에 page를 저장하도록 구현되어있다. 하지만 이 부분은 삭제하고, 이를 vm을 이용하도록 바꾸어야한다.
+> vm_entry를 할당하고 초기화하며, vm (hash table)에 insert하도록 수정하고, upage를 updage시켜준다.
 ------------------------------
 
 ```cpp
@@ -280,45 +281,15 @@ static bool setup_stack(void **esp)
   kpage->vme = make_vme(VM_ANON, ((uint8_t *)PHYS_BASE) - PGSIZE, true, true, NULL, NULL, 0, 0);
   if (!kpage->vme)  return false;
 
-  add_page_to_lru_list (kpage);
-
   /* insert_vme() 함수로 hash table에 추가 */
   insert_vme(&thread_current()->vm, kpage->vme);
-
   return success;
 }
 ```
 
-> setup_stack은 stack을 초기화하는 함수이다. </br>
-> 현재는 page를 할당하고, install page함수를 통해 user virtual address UPAGE에서 kernel virtual address KPAGE로의 mapping을 page table에 추가한 후, esp를 설정하는 것까지 구현되어있다. </br>
-> 이후에 vm_entry를 생성 및 초기화하고, vm (hash table)에 insert하는 부분을 추가한다.
-
-------------------------------
-
-```cpp
-/* userprog/process.c */
-bool
-load (const char *file_name, void (**eip) (void), void **esp){
-  ...
-  /* Set up stack. */
-  if (!setup_stack (esp))
-    goto done;
-
-  /* Start address. */
-  *eip = (void (*) (void)) ehdr.e_entry;
-
-  success = true;
-
- done:
-  /* We arrive here whether the load is successful or not. */
-  // file_close (file); //Changed
-  return success;
-}
-}
-```
-
-> TODO : file_close를 지워야하는 이유
-> Discussion에 써도 됨.
+> setup_stack은 stack을 초기화하는 함수이다.
+> 원래는 page를 할당하고, install page함수를 통해 user virtual address UPAGE에서 kernel virtual address KPAGE로의 mapping을 page table에 추가한 후, esp를 설정하는 것까지 구현되어있다.
+> 그 이후에 vm_entry를 생성 및 초기화하고, vm (hash table)에 insert하는 부분을 추가한다.
 
 </br>
 
@@ -393,7 +364,6 @@ bool handle_mm_fault(struct vm_entry *vme)
 
   // 로드 성공 여부 반환
   vme->is_loaded = true;
-  add_page_to_lru_list(kpage);
   return true;
 }
 ```
@@ -457,8 +427,6 @@ bool expand_stack(void *addr)
   kpage->vme = make_vme(VM_ANON, upage, true, true, NULL, NULL, 0, 0);
   if (!kpage->vme)  return false;
 
-  add_page_to_lru_list (kpage);
-
   /* insert_vme() 함수로 hash table에 추가 */
   insert_vme(&thread_current()->vm, kpage->vme);
   return success; 
@@ -502,20 +470,14 @@ static void valid_address(void *addr, void *esp)
 }
 ```
 
-> address가 valid한지 확인하는 함수에 verify stack()을 이용하여 address가 stack 영역에 포함되어 있는지 확인한 후, expand_stack()을 이용하여 stack을 확장시키는 부분을 추가한다.
+> address가 valid한지 확인하는 함수에서 verify stack()을 이용하여 address가 stack 영역에 포함되어 있는지 확인한 후, expand_stack()을 이용하여 stack을 확장하도록 수정하였다.
 
 ------------------------------
 
 ```cpp
 /* userprog/exception.c */
 static void page_fault (struct intr_frame *f) {
-   /* Determine cause. */
-   not_present = (f->error_code & PF_P) == 0;
-   write = (f->error_code & PF_W) != 0;
-   user = (f->error_code & PF_U) != 0;
-
-   if(!not_present) exit(-1);
-   
+  ...
    struct vm_entry *vme = find_vme (fault_addr);
    if (!vme)    /*Added*/
    {
@@ -523,26 +485,11 @@ static void page_fault (struct intr_frame *f) {
       if (!expand_stack(fault_addr)) exit(-1);
       return;
    }
-   if (!handle_mm_fault(vme)) {
-      exit(-1);
-   }
-  
-//   if (!user || is_kernel_vaddr(fault_addr) || not_present ) exit(-1);
-
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-//   printf ("Page fault at %p: %s error %s page in %s context.\n",
-//           fault_addr,
-//           not_present ? "not present" : "rights violation",
-//           write ? "writing" : "reading",
-//           user ? "user" : "kernel");
-//   kill (f);
+  ...
 }
 ```
 
-> verify stack()을 이용하여 address가 stack 영역에 포함되어 있는지 확인한 후,
-> expand_stack()을 이용하여 stack을 확장시킨다.
+> page_fault에서도 find_vme()로 찾은 vme가 NULL일 경우, verify stack()을 이용하여 address가 stack 영역에 포함되어 있는지 확인한 후, expand_stack()을 이용하여 stack을 확장하도록 수정하였다.
 
 </br>
 
@@ -585,7 +532,6 @@ struct thread
 ```cpp
 struct vm_entry {
   ...
-  struct hash_elem elem;      /* Hash Table Element */ /*Added*/
   struct list_elem mmap_elem; /* mmap_list element */ /*Added*/
   ...
 };
@@ -799,15 +745,14 @@ void swap_init()
 {
   lock_init(&lock_swap);
   bitmap_swap = bitmap_create(1024*8);
+  if (!bitmap_swap) return;
   block_swap = block_get_role(BLOCK_SWAP);
   if (!block_swap) return;
-  bitmap_swap = bitmap_create(block_size(block_swap) / 8);
-  if (!bitmap_swap) return;
 }
 ```
 
 > Swapping을 다룰 영역을 initialization한다.
-> TODO : 함수가 이상한디? bitmap_swap initial을 두 번함
+> TODO
 ------------------------------
 
 ```cpp
@@ -891,24 +836,6 @@ static struct list_elem *get_next_lru_clock()
 ------------------------------
 
 ```cpp
-struct page *is_victim()
-{
-  struct list_elem *ele = get_next_lru_clock();
-  struct page *page = list_entry(ele, struct page, elem);
-  while (pagedir_is_accessed(page->thread->pagedir, page->vme->vaddr))
-  {
-    pagedir_set_accessed(page->thread->pagedir, page->vme->vaddr, false);
-    ele = get_next_lru_clock();
-    page = list_entry(ele, struct page, elem);
-  }
-  return page;
-}
-```
-
-> TODO
-------------------------------
-
-```cpp
 /* vm/page.h */
 struct page {
   void *kaddr;
@@ -942,7 +869,7 @@ struct page *alloc_page(enum palloc_flags flags)
     try_to_free_pages();
     page->kaddr = palloc_get_page(flags);
   }
-  
+  add_page_to_lru_list(page);
   return page;
 }
 ```
@@ -951,7 +878,10 @@ struct page *alloc_page(enum palloc_flags flags)
 > 먼저 page 구조체를 할당 및 초기화하고, page의 정보를 설정한다.
 > 이때, palloc_get_page()와 flag를 통해 page의 physical address를 할당하고,
 > 할당이 되지 않았을 경우, 반복문을 통해 아래에서 후술할 try_to_free_pages()를 호출하면서 할당을 시도한다.
-> 할당이 되었다면, 해당 page를 return한다.
+> 할당이 되었다면, 해당 page를 add_page_to_lru_list()를 이용하여 lru_list에 추가하고, return한다.
+>
+> 기존에 palloc_get_page()만으로 page allocation이 구현되어있었던 setup_stack(), expand_stack(), handle_mm_fault()에서 이를 alloc_page로 변경한다.
+
 ------------------------------
 
 ```cpp
@@ -973,7 +903,29 @@ void free_page(void *kaddr)
 
 > 할당된 page를 free시키는 함수이다.
 > 먼저, find_page_in_lru_list()와 kaddr를 통해 page를 찾는다.
-> page를 찾았다면, lru_list에서 제거하고, page 구조체에 할당받은 메모리 공간을 해제한다.
+> page를 찾았다면, del_page_from_lru_list()를 이용하여 lru_list에서 제거하고, page 구조체에 할당받은 메모리 공간을 해제한다.
+>
+> free_page()도 마찬가지로 기존에 palloc_free_page()만으로 page free가 구현되어있던 부분을 free_page로 변경한다.
+------------------------------
+
+```cpp
+struct page *victim_page()
+{
+  struct list_elem *ele = get_next_lru_clock();
+  struct page *page = list_entry(ele, struct page, elem);
+  while (pagedir_is_accessed(page->thread->pagedir, page->vme->vaddr))
+  {
+    pagedir_set_accessed(page->thread->pagedir, page->vme->vaddr, false);
+    ele = get_next_lru_clock();
+    page = list_entry(ele, struct page, elem);
+  }
+  return page;
+}
+```
+
+> clock Algorithm을 이용하여 accessed bit이 0인 page를 찾는다.
+> while loop을 돌면서 pagedir_is_accessed()함수를 통해 page table의 accessed bit이 0인 것을 찾는다.
+> 만약 1일 경우 이를 0으로 재설정해주고, 0일 경우 loop를 벗어나며 해당 page를 victim으로 선정하여 return한다.
 ------------------------------
 
 ```cpp
@@ -981,7 +933,7 @@ void try_to_free_pages()
 {
   lock_acquire(&lru_lock);
 
-  struct page *page = is_victim();
+  struct page *page = victim_page();
   bool dirty = pagedir_is_dirty(page->thread->pagedir, page->vme->vaddr);
   
   if (page->vme->type == VM_FILE)
@@ -1003,7 +955,12 @@ void try_to_free_pages()
 }
 ```
 
-> TODO
+> victim page를 선정된 page를 free시켜 여유 메모리 공간을 확보하는 함수이다.
+> 먼저 victim page가 dirty인지 pagedir_is_dirty()를 통해 확인한다.
+> victim의 방출은 page의 vm_entry type에 따라 구현이 달라지는데
+> VM_FILE일 경우에는 dirty한지 확인해보고, dirty한 경우 파일에 변경 내용을 저장한 후 page를 해제해야한다.
+> VM_BIN일 경우에는 dirty한지 확인해보고, dirty한 경우에는 swap_out을 이용하여 swap partition에 기록후, type을 ANON으로 변경하고 page를 해제해야한다.
+> VM_ANON일 경우에는 무조건 swap partition에 기록후 page를 해제하여야한다.
 ------------------------------
 
 ```cpp
@@ -1018,7 +975,7 @@ main (void)
 }
 ```
 
-> TODO
+> pintos main program이 시작할때, swap_init과 lru_list_init을 호출하여 initialize해준다. 
 ------------------------------
 
 ```cpp
@@ -1033,7 +990,8 @@ vm_destroy_func(struct hash_elem *e, void *aux UNUSED)
 }
 ```
 
-> vm_destroy_func()에 virtual address에 해당하는 page를 free하고, swap_slot의을 해제시킨다.
+> vm_destroy_func()에 virtual address에 해당하는 page를 free하고,
+> TODO ??????
 ------------------------------
 
 ```cpp
@@ -1068,7 +1026,7 @@ bool handle_mm_fault(struct vm_entry *vme)
 # **VII. On Process Termination**
 
 ## **Brief Algorithm**
-On process termination에서 요구하는 것은 Process가 종료될 때 할당한 모든 resource들, 예로 frame table과 같은 것들을 delete 해주라는 것이다. 단, Copy on Write가 필요한 page는 dirty bit를 판단 기준으로 삼아 disk에 써준다. 이를 위해서 System call : munmap을 구현하여 사용하고자 한다.
+On process termination에서 요구하는 것은 Process가 종료될 때 할당한 모든 resource들, 예로 frame table과 같은 것들을 delete 해주라는 것이다. 단, Copy on Write가 필요한 page는 dirty bit를 판단 기준으로 삼아 disk에 써준다. 이를 위해서 System call : munmap을 사용하여 구현하고자 한다.
 
 ## **Implementation**
 
@@ -1122,17 +1080,35 @@ void munmap(mapid_t mapid)
 </br>
 
 # **Discussion**
-## 1. ROX TEST
-> rox test
+## 1. Lazy Loading
+> 
 
 ```cpp
+/* userprog/process.c */
+bool
+load (const char *file_name, void (**eip) (void), void **esp){
+  ...
+  /* Set up stack. */
+  if (!setup_stack (esp))
+    goto done;
+
+  /* Start address. */
+  *eip = (void (*) (void)) ehdr.e_entry;
+
+  success = true;
+
+ done:
+  /* We arrive here whether the load is successful or not. */
+  // file_close (file); /* Deleted */
+  return success;
+}
 
 ```
 
-> 위와 같이
+> 위와 같이 마지막에 file_close (file) 부분을 삭제하니, lazy loading이 이루어지는 것을 확인하였다.
 
 ## 2. Sync-read & write Test
-> 다른 test들과 달리 처리가 잘 안되던 test 중 하나이다. 특
+> Project2에서 잘 통과되던 test가 Project 3에서 돌아가지 않아, 이전 과제에서 구현하였던 부분 중에 잘못 구현한 부분이 있는지를 확인해보았다.
 
 ```cpp
 tid_t
@@ -1159,16 +1135,25 @@ process_execute (const char *file_name)
   ...
 ```
 
-> 다른 test들과 달리 처리가 잘 안되던 test 중 하나이다. 특
+> 
 
-## 3. page
-> Mul
+## 3. Page test
+> tests/vm/page-linear, parallel, merge-seq, merge-par, merge-stk, merge-mm의 테스트는 이번 과제에서 통과하기 위해 가장 긴 시간을 투자한 부분이다.
+> 위에서 기술한 구현사항을 모두 완료하였음에도 6개의 test가 번갈아가며 pass가 되지않는 모습을 보였다. 대부분 "run: open buf"의 에러가 발생하며, file자체를 열지 못하고 실패하였는데 Debugging하여도 그 원인을 쉽게 파악할 수 없었다.
+> 이 부분 또한 file open과 관련된 부분이기때문에 project2의 구현이 완벽하지 못하다 판단하여, 조교님께서 올려주신 code를 통해 어떤 부분이 부족하였는지 비교하였다. 그러던 중 syscall.c에 구현되어있는 open, read와 write함수를 제외한 file관련 함수들에 lock으로 file을 관리하지 않는것이 다르다는 점을 깨달았다.
 
 ```cpp
-
+bool create(const char *file, unsigned initial_size)
+{
+  if (!file) exit(-1);
+  lock_acquire(&lock_file);   /*Added*/
+  bool success = filesys_create(file, initial_size);
+  lock_release(&lock_file);   /*Added*/
+  return success;
+}
 ```
 
-> 
+> 그래서 위와 같이 file system과 관련된 함수에 lock을 걸어주었더니, file을 안전하게 open하였고 test에 통과할 수 있었다.
 
 ## 4. Changed from Design Report
 > A
